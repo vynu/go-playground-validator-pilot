@@ -1,0 +1,129 @@
+{
+  "api_request": {
+    "method": "POST",
+    "endpoint": "/api/v2/users",
+    "version": "2.1",
+    "timestamp": "2025-09-21T18:00:00Z",
+    "request_id": "req_abc123def456",
+    "client_info": {
+      "user_agent": "MyApp/1.0 (iOS; Version 15.0)",
+      "ip_address": "192.168.1.100",
+      "client_id": "client_12345",
+      "api_key": "ak_test_1234567890abcdef",
+      "rate_limit": {
+        "limit": 1000,
+        "remaining": 987,
+        "reset_time": "2025-09-21T19:00:00Z"
+      }
+    }
+  },
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "X-Request-ID": "req_abc123def456",
+    "X-API-Version": "2.1",
+    "X-Client-Version": "1.0.0",
+    "User-Agent": "MyApp/1.0 (iOS; Version 15.0)"
+  },
+  "query_parameters": {
+    "include": ["profile", "preferences"],
+    "fields": ["id", "email", "username", "created_at"],
+    "limit": 50,
+    "offset": 0,
+    "sort": "created_at:desc",
+    "filter": {
+      "status": "active",
+      "account_type": ["premium", "enterprise"],
+      "created_after": "2024-01-01T00:00:00Z"
+    }
+  },
+  "request_body": {
+    "user": {
+      "email": "newuser@example.com",
+      "username": "newuser123",
+      "password": "SecurePass123!",
+      "first_name": "New",
+      "last_name": "User",
+      "phone": "+1-555-987-6543",
+      "account_type": "standard",
+      "preferences": {
+        "language": "en-US",
+        "timezone": "America/Los_Angeles",
+        "notifications": {
+          "email": true,
+          "sms": false
+        }
+      },
+      "metadata": {
+        "signup_source": "web_app",
+        "referrer": "organic_search",
+        "campaign": "spring_2025"
+      }
+    }
+  },
+  "validation_context": {
+    "endpoint_rules": {
+      "rate_limiting": true,
+      "authentication_required": true,
+      "ssl_required": true,
+      "content_type_validation": true
+    },
+    "field_validations": {
+      "email": {
+        "format": "email",
+        "required": true,
+        "unique": true
+      },
+      "username": {
+        "format": "alphanumeric_underscore",
+        "min_length": 3,
+        "max_length": 30,
+        "required": true,
+        "unique": true
+      },
+      "password": {
+        "min_length": 8,
+        "max_length": 128,
+        "complexity": "high",
+        "required": true
+      },
+      "phone": {
+        "format": "e164",
+        "required": false
+      }
+    },
+    "business_rules": {
+      "duplicate_prevention": true,
+      "fraud_detection": true,
+      "compliance_checks": ["gdpr", "ccpa"],
+      "content_moderation": true
+    }
+  },
+  "expected_response": {
+    "status_codes": [200, 201],
+    "schema": {
+      "type": "object",
+      "required": ["id", "email", "username", "created_at"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "email": {"type": "string", "format": "email"},
+        "username": {"type": "string"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "status": {"type": "string", "enum": ["active", "pending", "suspended"]}
+      }
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Request-ID": "req_abc123def456",
+      "X-Rate-Limit-Remaining": "integer"
+    }
+  },
+  "security": {
+    "authentication_type": "bearer_token",
+    "authorization_scopes": ["user:create", "user:read"],
+    "encryption": "TLS_1.3",
+    "data_classification": "pii",
+    "audit_logging": true
+  }
+}

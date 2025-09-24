@@ -16,6 +16,9 @@
 coverage.*
 *.coverprofile
 profile.cov
+test_results_swagger_*
+test_logs
+.claude
 
 # Dependency directories (remove the comment below to include it)
 # vendor/

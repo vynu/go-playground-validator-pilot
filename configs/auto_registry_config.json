@@ -1,0 +1,30 @@
+{
+  "models_path": "src/models",
+  "validations_path": "src/validations",
+  "config_path": "",
+  "auto_discover": true,
+  "custom_models": [
+    {
+      "type": "shopify",
+      "name": "Shopify Webhook",
+      "description": "Shopify webhook payload validation with e-commerce business rules",
+      "model_struct": "ShopifyPayload",
+      "validator": "ShopifyValidator",
+      "version": "1.0.0",
+      "author": "Auto-Config",
+      "tags": ["webhook", "shopify", "ecommerce"],
+      "enabled": false
+    },
+    {
+      "type": "stripe",
+      "name": "Stripe Webhook",
+      "description": "Stripe webhook payload validation with payment processing rules",
+      "model_struct": "StripePayload",
+      "validator": "StripeValidator",
+      "version": "1.0.0",
+      "author": "Auto-Config",
+      "tags": ["webhook", "stripe", "payment"],
+      "enabled": false
+    }
+  ]
+}

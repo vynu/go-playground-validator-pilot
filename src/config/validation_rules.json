@@ -1,0 +1,252 @@
+{
+  "models": {
+    "GitHubPayload": {
+      "enabled": true,
+      "description": "GitHub webhook payload validation rules",
+      "fields": {
+        "action": {
+          "required": true,
+          "type": "string",
+          "allowed_values": ["opened", "closed", "reopened", "edited", "synchronize", "assigned", "unassigned", "review_requested", "review_request_removed", "labeled", "unlabeled", "ready_for_review", "converted_to_draft"],
+          "description": "The action that triggered the webhook"
+        },
+        "number": {
+          "required": true,
+          "type": "integer",
+          "min": 1,
+          "max": 99999999,
+          "description": "Pull request number"
+        },
+        "pull_request": {
+          "required": true,
+          "type": "object",
+          "description": "Pull request details"
+        },
+        "repository": {
+          "required": true,
+          "type": "object",
+          "description": "Repository information"
+        },
+        "sender": {
+          "required": true,
+          "type": "object",
+          "description": "User who triggered the event"
+        }
+      },
+      "business_rules": {
+        "wip_detection": {
+          "enabled": true,
+          "title_patterns": ["WIP:", "wip:", "[WIP]", "[wip]", "Work in Progress", "work in progress"],
+          "warning_message": "This appears to be a work-in-progress pull request"
+        },
+        "large_changeset": {
+          "enabled": true,
+          "threshold": 1000,
+          "warning_message": "This pull request has a large number of changes (>1000 additions/deletions)"
+        },
+        "missing_description": {
+          "enabled": true,
+          "min_body_length": 10,
+          "warning_message": "Pull request description is too short or missing"
+        },
+        "title_validation": {
+          "enabled": true,
+          "min_length": 5,
+          "max_length": 100,
+          "warning_message": "Pull request title should be between 5 and 100 characters"
+        }
+      }
+    },
+    "PullRequest": {
+      "enabled": true,
+      "description": "Pull request object validation rules",
+      "fields": {
+        "id": {
+          "required": true,
+          "type": "integer",
+          "min": 1,
+          "description": "Unique identifier for the pull request"
+        },
+        "number": {
+          "required": true,
+          "type": "integer",
+          "min": 1,
+          "description": "Pull request number"
+        },
+        "state": {
+          "required": true,
+          "type": "string",
+          "allowed_values": ["open", "closed"],
+          "description": "Pull request state"
+        },
+        "title": {
+          "required": true,
+          "type": "string",
+          "min_length": 1,
+          "max_length": 256,
+          "description": "Pull request title"
+        },
+        "body": {
+          "required": false,
+          "type": "string",
+          "description": "Pull request description"
+        },
+        "created_at": {
+          "required": true,
+          "type": "datetime",
+          "description": "Creation timestamp"
+        },
+        "updated_at": {
+          "required": true,
+          "type": "datetime",
+          "description": "Last update timestamp"
+        },
+        "draft": {
+          "required": true,
+          "type": "boolean",
+          "description": "Whether the pull request is a draft"
+        },
+        "head": {
+          "required": true,
+          "type": "object",
+          "description": "Head branch information"
+        },
+        "base": {
+          "required": true,
+          "type": "object",
+          "description": "Base branch information"
+        },
+        "user": {
+          "required": true,
+          "type": "object",
+          "description": "Pull request author"
+        },
+        "additions": {
+          "required": true,
+          "type": "integer",
+          "min": 0,
+          "description": "Number of additions"
+        },
+        "deletions": {
+          "required": true,
+          "type": "integer",
+          "min": 0,
+          "description": "Number of deletions"
+        },
+        "changed_files": {
+          "required": true,
+          "type": "integer",
+          "min": 0,
+          "description": "Number of changed files"
+        }
+      }
+    },
+    "Repository": {
+      "enabled": true,
+      "description": "Repository object validation rules",
+      "fields": {
+        "id": {
+          "required": true,
+          "type": "integer",
+          "min": 1,
+          "description": "Repository ID"
+        },
+        "name": {
+          "required": true,
+          "type": "string",
+          "min_length": 1,
+          "max_length": 100,
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "description": "Repository name"
+        },
+        "full_name": {
+          "required": true,
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$",
+          "description": "Full repository name (owner/repo)"
+        },
+        "private": {
+          "required": true,
+          "type": "boolean",
+          "description": "Whether the repository is private"
+        },
+        "owner": {
+          "required": true,
+          "type": "object",
+          "description": "Repository owner information"
+        },
+        "html_url": {
+          "required": true,
+          "type": "string",
+          "pattern": "^https://github.com/",
+          "description": "Repository HTML URL"
+        },
+        "default_branch": {
+          "required": true,
+          "type": "string",
+          "min_length": 1,
+          "description": "Default branch name"
+        }
+      }
+    },
+    "User": {
+      "enabled": true,
+      "description": "User object validation rules",
+      "fields": {
+        "id": {
+          "required": true,
+          "type": "integer",
+          "min": 1,
+          "description": "User ID"
+        },
+        "login": {
+          "required": true,
+          "type": "string",
+          "min_length": 1,
+          "max_length": 39,
+          "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$",
+          "description": "GitHub username"
+        },
+        "avatar_url": {
+          "required": true,
+          "type": "string",
+          "pattern": "^https://",
+          "description": "Avatar URL"
+        },
+        "type": {
+          "required": true,
+          "type": "string",
+          "allowed_values": ["User", "Organization", "Bot"],
+          "description": "Account type"
+        }
+      }
+    }
+  },
+  "validation_profiles": {
+    "strict": {
+      "description": "Strict validation with all rules enabled",
+      "enforce_all_required": true,
+      "business_rules_enabled": true,
+      "warning_threshold": 0
+    },
+    "permissive": {
+      "description": "Permissive validation allowing some flexibility",
+      "enforce_all_required": false,
+      "business_rules_enabled": true,
+      "warning_threshold": 3
+    },
+    "minimal": {
+      "description": "Minimal validation for basic structure only",
+      "enforce_all_required": false,
+      "business_rules_enabled": false,
+      "warning_threshold": 10
+    }
+  },
+  "global_settings": {
+    "default_profile": "strict",
+    "max_payload_size": 10485760,
+    "timeout_seconds": 30,
+    "enable_metrics": true,
+    "log_level": "info"
+  }
+}

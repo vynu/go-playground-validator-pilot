@@ -1,0 +1,249 @@
+{
+  "profile_tests": {
+    "strict_profile": {
+      "name": "strict",
+      "description": "Strict validation with all rules enabled",
+      "test_data": {
+        "type": "github_payload",
+        "action": "opened",
+        "number": 123,
+        "pull_request": {
+          "id": 1,
+          "number": 123,
+          "state": "open",
+          "title": "Add new feature",
+          "body": "This PR adds a comprehensive new feature with extensive testing and documentation.",
+          "created_at": "2025-09-21T12:00:00Z",
+          "updated_at": "2025-09-21T12:30:00Z",
+          "draft": false,
+          "additions": 150,
+          "deletions": 25,
+          "changed_files": 8
+        },
+        "repository": {
+          "id": 456,
+          "name": "test-repo",
+          "full_name": "org/test-repo",
+          "private": false,
+          "default_branch": "main"
+        },
+        "sender": {
+          "id": 789,
+          "login": "testuser",
+          "type": "User"
+        }
+      },
+      "expected_result": {
+        "is_valid": true,
+        "validation_profile": "strict",
+        "errors": [],
+        "warnings": []
+      }
+    },
+    "permissive_profile": {
+      "name": "permissive",
+      "description": "Permissive validation allowing some flexibility",
+      "test_data": {
+        "type": "github_payload",
+        "action": "opened",
+        "number": 456,
+        "pull_request": {
+          "id": 2,
+          "number": 456,
+          "state": "open",
+          "title": "Quick fix",
+          "body": "Fix bug",
+          "created_at": "2025-09-21T13:00:00Z",
+          "updated_at": "2025-09-21T13:15:00Z",
+          "draft": false,
+          "additions": 5,
+          "deletions": 2,
+          "changed_files": 1
+        },
+        "repository": {
+          "id": 456,
+          "name": "test-repo",
+          "full_name": "org/test-repo",
+          "private": false,
+          "default_branch": "main"
+        },
+        "sender": {
+          "id": 789,
+          "login": "testuser",
+          "type": "User"
+        }
+      },
+      "expected_result": {
+        "is_valid": true,
+        "validation_profile": "permissive",
+        "errors": [],
+        "warnings": ["Short description warning might be present"]
+      }
+    },
+    "minimal_profile": {
+      "name": "minimal",
+      "description": "Minimal validation for basic structure only",
+      "test_data": {
+        "type": "github_payload",
+        "action": "opened",
+        "number": 789,
+        "pull_request": {
+          "id": 3,
+          "number": 789,
+          "state": "open",
+          "title": "WIP: Experimental feature",
+          "body": "",
+          "created_at": "2025-09-21T14:00:00Z",
+          "updated_at": "2025-09-21T14:30:00Z",
+          "draft": true,
+          "additions": 1500,
+          "deletions": 800,
+          "changed_files": 45
+        },
+        "repository": {
+          "id": 456,
+          "name": "test-repo",
+          "full_name": "org/test-repo",
+          "private": false,
+          "default_branch": "main"
+        },
+        "sender": {
+          "id": 789,
+          "login": "testuser",
+          "type": "User"
+        }
+      },
+      "expected_result": {
+        "is_valid": true,
+        "validation_profile": "minimal",
+        "errors": [],
+        "warnings": ["Multiple warnings expected but allowed"]
+      }
+    }
+  },
+  "provider_comparison_tests": {
+    "multi_provider_validation": {
+      "description": "Test same data with multiple validation providers",
+      "test_data": {
+        "user_data": {
+          "id": 12345,
+          "email": "test@example.com",
+          "username": "testuser123",
+          "age": 25,
+          "is_active": true,
+          "created_at": "2025-09-21T12:00:00Z"
+        }
+      },
+      "providers": [
+        {
+          "name": "go_playground",
+          "config": {
+            "strict_mode": true,
+            "custom_validators": ["email", "username"]
+          }
+        },
+        {
+          "name": "json_schema",
+          "config": {
+            "schema_version": "draft-07",
+            "additional_properties": false
+          }
+        },
+        {
+          "name": "custom",
+          "config": {
+            "business_rules": true,
+            "compliance_checks": ["gdpr", "ccpa"]
+          }
+        }
+      ],
+      "expected_results": {
+        "go_playground": {
+          "is_valid": true,
+          "provider": "go_playground"
+        },
+        "json_schema": {
+          "is_valid": true,
+          "provider": "json_schema"
+        },
+        "custom": {
+          "is_valid": true,
+          "provider": "custom"
+        }
+      }
+    }
+  },
+  "configurable_validation_tests": {
+    "dynamic_rules": {
+      "description": "Test configurable validation with dynamic rules",
+      "configuration": {
+        "model_type": "user_profile",
+        "validation_rules": {
+          "email": {
+            "required": true,
+            "format": "email",
+            "domain_whitelist": ["example.com", "test.com"]
+          },
+          "username": {
+            "required": true,
+            "min_length": 3,
+            "max_length": 20,
+            "pattern": "^[a-zA-Z0-9_]+$"
+          },
+          "age": {
+            "required": false,
+            "type": "integer",
+            "min": 13,
+            "max": 120
+          }
+        },
+        "business_rules": {
+          "prevent_duplicate_email": true,
+          "enforce_strong_password": false,
+          "require_email_verification": true
+        }
+      },
+      "test_cases": [
+        {
+          "name": "valid_user",
+          "data": {
+            "email": "user@example.com",
+            "username": "validuser",
+            "age": 25
+          },
+          "expected_valid": true
+        },
+        {
+          "name": "invalid_email_domain",
+          "data": {
+            "email": "user@invalid.com",
+            "username": "validuser",
+            "age": 25
+          },
+          "expected_valid": false,
+          "expected_errors": ["email domain not in whitelist"]
+        },
+        {
+          "name": "invalid_username_format",
+          "data": {
+            "email": "user@example.com",
+            "username": "invalid-username!",
+            "age": 25
+          },
+          "expected_valid": false,
+          "expected_errors": ["username contains invalid characters"]
+        },
+        {
+          "name": "age_out_of_range",
+          "data": {
+            "email": "user@example.com",
+            "username": "validuser",
+            "age": 150
+          },
+          "expected_valid": false,
+          "expected_errors": ["age exceeds maximum value"]
+        }
+      ]
+    }
+  }
+}

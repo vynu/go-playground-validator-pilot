@@ -1,0 +1,192 @@
+//go:build ignore
+// +build ignore
+
+// Package main demonstrates how to register the new {{.ServiceName}} model with the validation system.
+// This example shows the complete process of integrating a custom model into the modular validation framework.
+//
+// NOTE: This is a template file - replace {{.ServiceName}} and other template variables with actual values.
+
+package main
+
+import (
+	"log"
+	"reflect"
+
+	"github-data-validator/models"
+	"github-data-validator/validations"
+	"github-data-validator/registry"
+)
+
+// Register{{.ServiceName}}Model registers the {{.ServiceName}} model with the global registry.
+// 🚀 AUTOMATIC HTTP ENDPOINT: When registered, this model automatically gets a
+// validation endpoint at POST /validate/{{.ModelTypeName}} - no manual setup required!
+func Register{{.ServiceName}}Model() error {
+	// Create the model information
+	modelInfo := &registry.ModelInfo{
+		Type:        registry.ModelType("{{.ModelTypeName}}"),
+		Name:        "{{.ServiceName}} {{.DataType}}",
+		Description: "{{.Description}}",
+		ModelStruct: reflect.TypeOf(models.{{.MainStructName}}{}),
+		Validator:   &{{.ServiceName}}ValidatorWrapper{validator: validations.New{{.ServiceName}}Validator()},
+		Version:     "{{.Version}}",
+		Author:      "{{.Author}}",
+		Tags:        []string{ {{range .Tags}}"{{.}}", {{end}} },
+		Examples:    []interface{}{ {{range .Examples}}{{.}}, {{end}} },
+	}
+
+	// Register with the global registry - this automatically creates HTTP endpoints!
+	if err := registry.RegisterCustomModel(modelInfo); err != nil {
+		return err
+	}
+
+	log.Printf("✅ Successfully registered {{.ServiceName}} model (type: {{.ModelTypeName}})")
+	log.Printf("🎯 Auto-generated endpoint: POST /validate/{{.ModelTypeName}}")
+	return nil
+}
+
+// {{.ServiceName}}ValidatorWrapper wraps the {{.ServiceName}} validator to implement the common interface.
+type {{.ServiceName}}ValidatorWrapper struct {
+	validator *validations.{{.ServiceName}}Validator
+}
+
+// ValidatePayload validates a payload using the {{.ServiceName}} validator.
+func (wrapper *{{.ServiceName}}ValidatorWrapper) ValidatePayload(payload interface{}) models.ValidationResult {
+	// Type assertion to ensure we have the correct payload type
+	{{.VarName}}Payload, ok := payload.(models.{{.MainStructName}})
+	if !ok {
+		return models.ValidationResult{
+			IsValid: false,
+			Errors: []models.ValidationError{{
+				Field:   "payload",
+				Message: "payload is not a {{.ServiceName}} {{.DataType}} payload",
+				Code:    "TYPE_MISMATCH",
+			}},
+		}
+	}
+
+	// Perform validation using the specific validator
+	return wrapper.validator.ValidatePayload({{.VarName}}Payload)
+}
+
+// Example usage function
+func example{{.ServiceName}}Usage() {
+	// Register the model (typically done at startup)
+	if err := Register{{.ServiceName}}Model(); err != nil {
+		log.Fatalf("Failed to register {{.ServiceName}} model: %v", err)
+	}
+
+	// Create a sample payload
+	payload := models.{{.MainStructName}}{
+		{{range .ExamplePayload}}
+		{{.Field}}: {{.Value}},{{end}}
+	}
+
+	// Validate using the registry
+	result, err := registry.ValidateWithRegistry(registry.ModelType("{{.ModelTypeName}}"), payload)
+	if err != nil {
+		log.Printf("Validation failed: %v", err)
+		return
+	}
+
+	// Process results
+	if result.IsValid {
+		log.Println("✅ Payload is valid!")
+	} else {
+		log.Printf("❌ Payload is invalid: %d errors", len(result.Errors))
+		for _, err := range result.Errors {
+			log.Printf("  - %s: %s", err.Field, err.Message)
+		}
+	}
+
+	if len(result.Warnings) > 0 {
+		log.Printf("⚠️  %d warnings found:", len(result.Warnings))
+		for _, warning := range result.Warnings {
+			log.Printf("  - %s: %s", warning.Field, warning.Message)
+		}
+	}
+}
+
+// NOTE: HTTP endpoint integration is no longer needed!
+// The model registry automatically creates HTTP endpoints for all registered models.
+// Your endpoint POST /validate/{{.ModelTypeName}} will be automatically available
+// when the model is registered with the global registry.
+
+// Configuration example for adding to server config
+/*
+Example server configuration to include this model:
+
+{
+  "custom_models": [
+    {
+      "type": "{{.ModelTypeName}}",
+      "name": "{{.ServiceName}} {{.DataType}}",
+      "description": "{{.Description}}",
+      "version": "{{.Version}}",
+      "author": "{{.Author}}",
+      "tags": [{{range .Tags}}"{{.}}"{{if not (last .)}}}, {{end}}{{end}}],
+      "examples": [
+        "examples/{{.VarName}}_valid.json",
+        "examples/{{.VarName}}_invalid.json"
+      ]
+    }
+  ]
+}
+*/
+
+// Test data examples
+var {{.ServiceName}}TestPayloads = []struct {
+	Name    string
+	Payload models.{{.MainStructName}}
+	Valid   bool
+}{
+	{
+		Name: "Valid {{.ServiceName}} {{.DataType}}",
+		Payload: models.{{.MainStructName}}{
+			{{range .ValidTestPayload}}
+			{{.Field}}: {{.Value}},{{end}}
+		},
+		Valid: true,
+	},
+	{
+		Name: "Invalid {{.ServiceName}} {{.DataType}} - Missing Required Fields",
+		Payload: models.{{.MainStructName}}{
+			{{range .InvalidTestPayload}}
+			{{.Field}}: {{.Value}},{{end}}
+		},
+		Valid: false,
+	},
+}
+
+// Integration test function
+func test{{.ServiceName}}Integration() {
+	// Register the model
+	if err := Register{{.ServiceName}}Model(); err != nil {
+		log.Fatalf("Failed to register model: %v", err)
+	}
+
+	// Run tests
+	for _, test := range {{.ServiceName}}TestPayloads {
+		log.Printf("Testing: %s", test.Name)
+
+		result, err := registry.ValidateWithRegistry(registry.ModelType("{{.ModelTypeName}}"), test.Payload)
+		if err != nil {
+			log.Printf("❌ Test failed with error: %v", err)
+			continue
+		}
+
+		if result.IsValid == test.Valid {
+			log.Printf("✅ Test passed: validation result matches expected (%t)", test.Valid)
+		} else {
+			log.Printf("❌ Test failed: expected %t, got %t", test.Valid, result.IsValid)
+			log.Printf("   Errors: %+v", result.Errors)
+		}
+	}
+}
+
+// Auto-detection support
+func init() {
+	// Register the model automatically when the package is imported
+	if err := Register{{.ServiceName}}Model(); err != nil {
+		log.Printf("Warning: Failed to auto-register {{.ServiceName}} model: %v", err)
+	}
+}

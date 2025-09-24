@@ -1,0 +1,132 @@
+{
+  "action": "opened",
+  "number": "invalid_number",
+  "pull_request": {
+    "id": "invalid_id",
+    "number": "invalid_number",
+    "state": "",
+    "title": "",
+    "body": null,
+    "created_at": "invalid_date",
+    "updated_at": "invalid_date",
+    "closed_at": "invalid_date",
+    "merged_at": "invalid_date",
+    "merge_commit_sha": "invalid_sha",
+    "draft": "not_boolean",
+    "head": {
+      "label": "",
+      "ref": "",
+      "sha": "invalid_sha_too_short",
+      "user": {
+        "id": "invalid_id",
+        "login": "",
+        "avatar_url": "not_a_url",
+        "type": "InvalidType"
+      },
+      "repo": {
+        "id": "invalid_id",
+        "name": "",
+        "full_name": "",
+        "private": "not_boolean",
+        "owner": {
+          "id": "invalid_id",
+          "login": "",
+          "avatar_url": "not_a_url",
+          "type": "InvalidType"
+        },
+        "html_url": "not_a_url",
+        "description": "",
+        "clone_url": "not_a_url",
+        "ssh_url": "not_a_url",
+        "default_branch": ""
+      }
+    },
+    "base": {
+      "label": "",
+      "ref": "",
+      "sha": "invalid_sha_too_short",
+      "user": {
+        "id": "invalid_id",
+        "login": "",
+        "avatar_url": "not_a_url",
+        "type": "InvalidType"
+      },
+      "repo": {
+        "id": "invalid_id",
+        "name": "",
+        "full_name": "",
+        "private": "not_boolean",
+        "owner": {
+          "id": "invalid_id",
+          "login": "",
+          "avatar_url": "not_a_url",
+          "type": "InvalidType"
+        },
+        "html_url": "not_a_url",
+        "description": "",
+        "clone_url": "not_a_url",
+        "ssh_url": "not_a_url",
+        "default_branch": ""
+      }
+    },
+    "user": {
+      "id": "invalid_id",
+      "login": "",
+      "avatar_url": "not_a_url",
+      "type": "InvalidType"
+    },
+    "assignee": null,
+    "assignees": [],
+    "requested_reviewers": [],
+    "requested_teams": [],
+    "labels": [],
+    "milestone": null,
+    "commits_url": "not_a_url",
+    "review_comments_url": "not_a_url",
+    "comments_url": "not_a_url",
+    "statuses_url": "not_a_url",
+    "additions": "not_a_number",
+    "deletions": "not_a_number",
+    "changed_files": "not_a_number"
+  },
+  "repository": {
+    "id": "invalid_id",
+    "name": "",
+    "full_name": "",
+    "private": "not_boolean",
+    "owner": {
+      "id": "invalid_id",
+      "login": "",
+      "avatar_url": "not_a_url",
+      "type": "InvalidType"
+    },
+    "html_url": "not_a_url",
+    "description": "",
+    "clone_url": "not_a_url",
+    "ssh_url": "not_a_url",
+    "default_branch": "",
+    "created_at": "invalid_date",
+    "updated_at": "invalid_date",
+    "pushed_at": "invalid_date",
+    "size": "not_a_number",
+    "stargazers_count": "not_a_number",
+    "watchers_count": "not_a_number",
+    "language": "",
+    "has_issues": "not_boolean",
+    "has_projects": "not_boolean",
+    "has_wiki": "not_boolean",
+    "has_downloads": "not_boolean",
+    "archived": "not_boolean",
+    "disabled": "not_boolean",
+    "open_issues_count": "not_a_number",
+    "forks_count": "not_a_number",
+    "topics": "not_an_array",
+    "visibility": ""
+  },
+  "sender": {
+    "id": "invalid_id",
+    "login": "",
+    "avatar_url": "not_a_url",
+    "type": "InvalidType"
+  }
+}

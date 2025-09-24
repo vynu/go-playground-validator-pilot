@@ -1,0 +1,232 @@
+{
+  "eventKey": "pullrequest:created",
+  "date": "2025-09-21T18:00:00+0000",
+  "actor": {
+    "name": "developer",
+    "emailAddress": "dev@example.com",
+    "id": 123,
+    "displayName": "Developer Name",
+    "active": true,
+    "slug": "developer",
+    "type": "NORMAL",
+    "links": {
+      "self": [
+        {
+          "href": "https://bitbucket.example.com/users/developer"
+        }
+      ]
+    }
+  },
+  "pullRequest": {
+    "id": 101,
+    "version": 1,
+    "title": "Add OAuth2 authentication system",
+    "description": "This pull request implements OAuth2 authentication with JWT tokens.\n\n## Changes\n- Added OAuth2 provider\n- Implemented JWT middleware\n- Updated user model\n- Added tests",
+    "state": "OPEN",
+    "open": true,
+    "closed": false,
+    "createdDate": 1726945200000,
+    "updatedDate": 1726947000000,
+    "fromRef": {
+      "id": "refs/heads/feature/oauth2-auth",
+      "displayId": "feature/oauth2-auth",
+      "latestCommit": "a1b2c3d4e5f6789012345678901234567890abcd",
+      "repository": {
+        "slug": "awesome-project",
+        "id": 456,
+        "name": "awesome-project",
+        "description": "An awesome Bitbucket project",
+        "hierarchyId": "e91181f5-7d79-4c3e-9e9c-123456789abc",
+        "scmId": "git",
+        "state": "AVAILABLE",
+        "statusMessage": "Available",
+        "forkable": true,
+        "project": {
+          "key": "MYPROJ",
+          "id": 789,
+          "name": "My Project",
+          "description": "My awesome project",
+          "public": false,
+          "type": "NORMAL",
+          "links": {
+            "self": [
+              {
+                "href": "https://bitbucket.example.com/projects/MYPROJ"
+              }
+            ]
+          }
+        },
+        "public": false,
+        "links": {
+          "clone": [
+            {
+              "href": "https://bitbucket.example.com/scm/myproj/awesome-project.git",
+              "name": "http"
+            },
+            {
+              "href": "ssh://git@bitbucket.example.com:7999/myproj/awesome-project.git",
+              "name": "ssh"
+            }
+          ],
+          "self": [
+            {
+              "href": "https://bitbucket.example.com/projects/MYPROJ/repos/awesome-project/browse"
+            }
+          ]
+        }
+      }
+    },
+    "toRef": {
+      "id": "refs/heads/main",
+      "displayId": "main",
+      "latestCommit": "f1e2d3c4b5a6789012345678901234567890fedc",
+      "repository": {
+        "slug": "awesome-project",
+        "id": 456,
+        "name": "awesome-project",
+        "description": "An awesome Bitbucket project",
+        "hierarchyId": "e91181f5-7d79-4c3e-9e9c-123456789abc",
+        "scmId": "git",
+        "state": "AVAILABLE",
+        "statusMessage": "Available",
+        "forkable": true,
+        "project": {
+          "key": "MYPROJ",
+          "id": 789,
+          "name": "My Project",
+          "description": "My awesome project",
+          "public": false,
+          "type": "NORMAL",
+          "links": {
+            "self": [
+              {
+                "href": "https://bitbucket.example.com/projects/MYPROJ"
+              }
+            ]
+          }
+        },
+        "public": false,
+        "links": {
+          "clone": [
+            {
+              "href": "https://bitbucket.example.com/scm/myproj/awesome-project.git",
+              "name": "http"
+            },
+            {
+              "href": "ssh://git@bitbucket.example.com:7999/myproj/awesome-project.git",
+              "name": "ssh"
+            }
+          ],
+          "self": [
+            {
+              "href": "https://bitbucket.example.com/projects/MYPROJ/repos/awesome-project/browse"
+            }
+          ]
+        }
+      }
+    },
+    "locked": false,
+    "author": {
+      "user": {
+        "name": "developer",
+        "emailAddress": "dev@example.com",
+        "id": 123,
+        "displayName": "Developer Name",
+        "active": true,
+        "slug": "developer",
+        "type": "NORMAL",
+        "links": {
+          "self": [
+            {
+              "href": "https://bitbucket.example.com/users/developer"
+            }
+          ]
+        }
+      },
+      "role": "AUTHOR",
+      "approved": false,
+      "status": "UNAPPROVED"
+    },
+    "reviewers": [
+      {
+        "user": {
+          "name": "reviewer1",
+          "emailAddress": "reviewer1@example.com",
+          "id": 456,
+          "displayName": "Reviewer Name",
+          "active": true,
+          "slug": "reviewer1",
+          "type": "NORMAL",
+          "links": {
+            "self": [
+              {
+                "href": "https://bitbucket.example.com/users/reviewer1"
+              }
+            ]
+          }
+        },
+        "role": "REVIEWER",
+        "approved": false,
+        "status": "UNAPPROVED"
+      }
+    ],
+    "participants": [],
+    "properties": {
+      "mergeResult": {
+        "outcome": "CLEAN",
+        "current": true
+      }
+    },
+    "links": {
+      "self": [
+        {
+          "href": "https://bitbucket.example.com/projects/MYPROJ/repos/awesome-project/pull-requests/101"
+        }
+      ]
+    }
+  },
+  "repository": {
+    "slug": "awesome-project",
+    "id": 456,
+    "name": "awesome-project",
+    "description": "An awesome Bitbucket project",
+    "hierarchyId": "e91181f5-7d79-4c3e-9e9c-123456789abc",
+    "scmId": "git",
+    "state": "AVAILABLE",
+    "statusMessage": "Available",
+    "forkable": true,
+    "project": {
+      "key": "MYPROJ",
+      "id": 789,
+      "name": "My Project",
+      "description": "My awesome project",
+      "public": false,
+      "type": "NORMAL",
+      "links": {
+        "self": [
+          {
+            "href": "https://bitbucket.example.com/projects/MYPROJ"
+          }
+        ]
+      }
+    },
+    "public": false,
+    "links": {
+      "clone": [
+        {
+          "href": "https://bitbucket.example.com/scm/myproj/awesome-project.git",
+          "name": "http"
+        },
+        {
+          "href": "ssh://git@bitbucket.example.com:7999/myproj/awesome-project.git",
+          "name": "ssh"
+        }
+      ],
+      "self": [
+        {
+          "href": "https://bitbucket.example.com/projects/MYPROJ/repos/awesome-project/browse"
+        }
+      ]
+    }
+  }
+}

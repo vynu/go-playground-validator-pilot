@@ -1,0 +1,202 @@
+//go:build ignore
+// +build ignore
+
+// Package validations contains {{.ServiceName}}-specific validation logic and business rules.
+// This module implements custom validators and business logic for {{.ServiceName}} {{.DataType}} payloads.
+//
+// NOTE: This is a template file - replace {{.ServiceName}} and other template variables with actual values.
+
+package validations
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/go-playground/validator/v10"
+	"github-data-validator/models"
+)
+
+// {{.ServiceName}}Validator provides {{.ServiceName}}-specific validation functionality.
+type {{.ServiceName}}Validator struct {
+	validator *validator.Validate
+}
+
+// New{{.ServiceName}}Validator creates a new {{.ServiceName}} validator instance.
+func New{{.ServiceName}}Validator() *{{.ServiceName}}Validator {
+	v := validator.New()
+
+	// Register {{.ServiceName}}-specific custom validators
+	{{range .CustomValidators}}
+	v.RegisterValidation("{{.Tag}}", {{.FunctionName}}){{end}}
+
+	return &{{.ServiceName}}Validator{validator: v}
+}
+
+// ValidatePayload validates a {{.ServiceName}} {{.DataType}} payload with comprehensive rules.
+func ({{.ValidatorVar}} *{{.ServiceName}}Validator) ValidatePayload(payload models.{{.MainStructName}}) models.ValidationResult {
+	start := time.Now()
+
+	result := models.ValidationResult{
+		IsValid:   true,
+		ModelType: "{{.MainStructName}}",
+		Provider:  "{{.ProviderName}}",
+		Timestamp: time.Now(),
+		Errors:    []models.ValidationError{},
+		Warnings:  []models.ValidationWarning{},
+	}
+
+	// Perform struct validation
+	if err := {{.ValidatorVar}}.validator.Struct(payload); err != nil {
+		result.IsValid = false
+
+		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			for _, fieldError := range validationErrors {
+				result.Errors = append(result.Errors, models.ValidationError{
+					Field:      fieldError.Field(),
+					Message:    format{{.ServiceName}}ValidationError(fieldError),
+					Code:       fieldError.Tag(),
+					Value:      fieldError.Value(),
+					Expected:   fieldError.Param(),
+					Constraint: fieldError.Tag(),
+					Path:       fieldError.Namespace(),
+					Severity:   "error",
+				})
+			}
+		}
+	}
+
+	// Perform business logic validation
+	if result.IsValid {
+		warnings := Validate{{.ServiceName}}BusinessLogic(payload)
+		result.Warnings = append(result.Warnings, warnings...)
+	}
+
+	// Add performance metrics
+	result.ProcessingDuration = time.Since(start)
+	result.PerformanceMetrics = &models.PerformanceMetrics{
+		ValidationDuration: time.Since(start),
+		Provider:          "{{.ProviderName}}",
+		FieldCount:        count{{.ServiceName}}StructFields(payload),
+		RuleCount:         {{.ValidatorVar}}.getRuleCount(),
+	}
+
+	return result
+}
+
+{{range .CustomValidators}}
+// {{.FunctionName}} validates {{.Description}}.
+func {{.FunctionName}}(fl validator.FieldLevel) bool {
+	value := fl.Field().String()
+
+	{{.ValidationLogic}}
+
+	return {{.ReturnCondition}}
+}
+{{end}}
+
+// Validate{{.ServiceName}}BusinessLogic performs {{.ServiceName}}-specific business logic validation.
+func Validate{{.ServiceName}}BusinessLogic(payload models.{{.MainStructName}}) []models.ValidationWarning {
+	var warnings []models.ValidationWarning
+
+	{{range .BusinessLogicChecks}}
+	// {{.Description}}
+	warnings = append(warnings, {{.FunctionName}}(payload)...)
+	{{end}}
+
+	return warnings
+}
+
+{{range .BusinessLogicChecks}}
+// {{.FunctionName}} {{.Description}}.
+func {{.FunctionName}}(payload models.{{.MainStructName}}) []models.ValidationWarning {
+	var warnings []models.ValidationWarning
+
+	{{.Implementation}}
+
+	return warnings
+}
+{{end}}
+
+// format{{.ServiceName}}ValidationError formats validation errors with {{.ServiceName}}-specific context.
+func format{{.ServiceName}}ValidationError(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return fmt.Sprintf("Field '%s' is required for {{.ServiceName}} {{.DataType}} validation", fe.Field())
+	{{range .CustomValidators}}
+	case "{{.Tag}}":
+		return fmt.Sprintf("Field '%s' {{.ErrorMessage}}", fe.Field()){{end}}
+	case "url":
+		return fmt.Sprintf("Field '%s' must be a valid URL format", fe.Field())
+	case "email":
+		return fmt.Sprintf("Field '%s' must be a valid email address", fe.Field())
+	case "oneof":
+		return fmt.Sprintf("Field '%s' must be one of: %s", fe.Field(), fe.Param())
+	case "min":
+		return fmt.Sprintf("Field '%s' must be at least %s characters long", fe.Field(), fe.Param())
+	case "max":
+		return fmt.Sprintf("Field '%s' must be at most %s characters long", fe.Field(), fe.Param())
+	case "gt":
+		return fmt.Sprintf("Field '%s' must be greater than %s", fe.Field(), fe.Param())
+	case "gte":
+		return fmt.Sprintf("Field '%s' must be greater than or equal to %s", fe.Field(), fe.Param())
+	case "len":
+		return fmt.Sprintf("Field '%s' must be exactly %s characters long", fe.Field(), fe.Param())
+	case "hexadecimal":
+		return fmt.Sprintf("Field '%s' must contain only hexadecimal characters", fe.Field())
+	default:
+		return fmt.Sprintf("Field '%s' failed validation: %s", fe.Field(), fe.Tag())
+	}
+}
+
+// count{{.ServiceName}}StructFields counts the number of fields in a {{.ServiceName}} struct for metrics.
+func count{{.ServiceName}}StructFields(payload models.{{.MainStructName}}) int {
+	// This is a simplified count - in practice, you might use reflection
+	// to count all nested fields for more accurate metrics
+	return {{.FieldCount}} // Approximate field count for {{.ServiceName}} payload
+}
+
+// getRuleCount returns the number of validation rules applied.
+func ({{.ValidatorVar}} *{{.ServiceName}}Validator) getRuleCount() int {
+	// Return approximate number of validation rules
+	return {{.RuleCount}}
+}
+
+// Example business logic implementations:
+
+{{range .ExampleBusinessLogic}}
+// Example: {{.Name}}
+// {{.Description}}
+//
+// Implementation example:
+// func {{.FunctionName}}(payload models.{{$.MainStructName}}) []models.ValidationWarning {
+//     var warnings []models.ValidationWarning
+//
+//     {{.ExampleImplementation}}
+//
+//     return warnings
+// }
+{{end}}
+
+// Additional Notes:
+//
+// Custom Validators:
+// {{range .CustomValidatorsDoc}}
+// - {{.Tag}}: {{.Description}}
+//   Usage: `validate:"{{.Tag}}"` or `validate:"{{.Tag}}={{.Parameter}}"`
+//   Example: {{.Example}}
+// {{end}}
+//
+// Business Logic Checks:
+// {{range .BusinessLogicDoc}}
+// - {{.Name}}: {{.Description}}
+//   Triggers: {{.Triggers}}
+//   Severity: {{.Severity}}
+// {{end}}
+//
+// Performance Considerations:
+// - Field counting uses reflection for accuracy but can be optimized with hardcoded counts
+// - Business logic validation runs only on structurally valid payloads
+// - Custom validators should be efficient as they run on every field validation
+// - Consider caching validation results for identical payloads in high-throughput scenarios

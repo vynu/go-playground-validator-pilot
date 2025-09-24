@@ -1,0 +1,744 @@
+openapi: 3.0.3
+info:
+  title: Modular Multi-Platform Validation API
+  description: |
+    A comprehensive modular validation server supporting multiple platforms and data formats.
+
+    This API provides unified validation capabilities for various webhook payloads and data structures,
+    with dynamic model discovery, extensible validation rules, and comprehensive reporting.
+
+    ## Supported Platforms
+    - GitHub webhooks and payloads
+    - GitLab webhooks and merge requests
+    - Bitbucket webhooks and pull requests
+    - Slack messages and events
+    - Generic API requests/responses
+    - Database queries and operations
+    - Custom model types
+
+    ## Features
+    - Dynamic model registration and discovery
+    - Modular validation architecture
+    - Automatic type conversion for generic endpoint
+    - Comprehensive error reporting with detailed paths
+    - Performance metrics and monitoring
+    - Extensible plugin system for new models
+
+  version: 2.0.0-modular
+  contact:
+    name: Modular Validation API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+  - url: https://api.example.com
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns the current health status of the modular validation server
+      operationId: getHealth
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                version: "2.0.0-modular"
+                uptime: "45m32.123s"
+                server: "modular-validation-server"
+
+  /models:
+    get:
+      summary: List available model types
+      description: Returns all available model types that can be validated
+      operationId: getModels
+      tags:
+        - System
+      responses:
+        '200':
+          description: Available model types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+              example:
+                models: ["github", "gitlab", "bitbucket", "slack", "api", "database", "generic"]
+                count: 7
+
+  /validate/github:
+    post:
+      summary: Validate GitHub webhook payload
+      description: Validates a GitHub webhook payload using GitHub-specific validation rules
+      operationId: validateGitHub
+      tags:
+        - Platform Validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubPayload'
+            examples:
+              minimal_valid:
+                summary: Minimal valid GitHub payload
+                value:
+                  action: "opened"
+                  number: 123
+                  pull_request:
+                    id: 123
+                    number: 123
+                    title: "Test PR"
+                    state: "open"
+                    user:
+                      login: "testuser"
+                      id: 123
+                  repository:
+                    id: 123
+                    name: "test-repo"
+                    full_name: "testuser/test-repo"
+      responses:
+        '200':
+          description: Validation completed successfully (valid payload)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '422':
+          description: Validation completed with errors (invalid payload)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '400':
+          description: Invalid JSON payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /validate/gitlab:
+    post:
+      summary: Validate GitLab webhook payload
+      description: Validates a GitLab webhook payload using GitLab-specific validation rules
+      operationId: validateGitLab
+      tags:
+        - Platform Validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitLabPayload'
+            examples:
+              merge_request:
+                summary: GitLab merge request payload
+                value:
+                  object_kind: "merge_request"
+                  project:
+                    id: 123
+                    name: "test-project"
+                  user:
+                    name: "testuser"
+      responses:
+        '200':
+          description: Validation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '400':
+          description: Invalid JSON payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /validate/bitbucket:
+    post:
+      summary: Validate Bitbucket webhook payload
+      description: Validates a Bitbucket webhook payload using Bitbucket-specific validation rules
+      operationId: validateBitbucket
+      tags:
+        - Platform Validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BitbucketPayload'
+            examples:
+              pull_request:
+                summary: Bitbucket pull request payload
+                value:
+                  repository:
+                    name: "test-repo"
+                  actor:
+                    display_name: "testuser"
+                  pullrequest:
+                    id: 123
+      responses:
+        '200':
+          description: Validation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '400':
+          description: Invalid JSON payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /validate/slack:
+    post:
+      summary: Validate Slack message payload
+      description: Validates a Slack message payload using Slack-specific validation rules
+      operationId: validateSlack
+      tags:
+        - Platform Validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlackMessagePayload'
+            examples:
+              basic_message:
+                summary: Basic Slack message
+                value:
+                  text: "Hello, world!"
+                  channel: "#general"
+                  user: "testuser"
+                  team: "team123"
+                  timestamp: "1234567890"
+      responses:
+        '200':
+          description: Validation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '400':
+          description: Invalid JSON payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /validate:
+    post:
+      summary: Generic validation with explicit model type
+      description: |
+        Validates any payload by specifying the model type explicitly.
+        This endpoint automatically converts JSON maps to the appropriate typed structures.
+      operationId: validateGeneric
+      tags:
+        - Generic Validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericValidationRequest'
+            examples:
+              github_generic:
+                summary: GitHub payload via generic endpoint
+                value:
+                  model_type: "github"
+                  payload:
+                    action: "opened"
+                    number: 123
+                    pull_request:
+                      id: 123
+                      number: 123
+                      title: "Test PR"
+                      state: "open"
+                      user:
+                        login: "testuser"
+                        id: 123
+                    repository:
+                      id: 123
+                      name: "test-repo"
+                      full_name: "testuser/test-repo"
+              slack_generic:
+                summary: Slack payload via generic endpoint
+                value:
+                  model_type: "slack"
+                  payload:
+                    text: "Hello"
+                    channel: "#general"
+                    user: "testuser"
+                    team: "team123"
+                    timestamp: "1234567890"
+      responses:
+        '200':
+          description: Validation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModularValidationResult'
+        '400':
+          description: Invalid request format or unsupported model type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    # Core response schemas
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - uptime
+        - server
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          description: Current server health status
+        version:
+          type: string
+          example: "2.0.0-modular"
+          description: Server version
+        uptime:
+          type: string
+          example: "45m32.123s"
+          description: Server uptime duration
+        server:
+          type: string
+          example: "modular-validation-server"
+          description: Server identifier
+
+    ModelsResponse:
+      type: object
+      required:
+        - models
+        - count
+      properties:
+        models:
+          type: array
+          items:
+            type: string
+          example: ["github", "gitlab", "bitbucket", "slack", "api", "database", "generic"]
+          description: List of available model types
+        count:
+          type: integer
+          example: 7
+          description: Number of available models
+
+    # Request schemas
+    GenericValidationRequest:
+      type: object
+      required:
+        - model_type
+        - payload
+      properties:
+        model_type:
+          type: string
+          enum: [github, gitlab, bitbucket, slack, api, database, generic]
+          description: Type of model to validate against
+        payload:
+          type: object
+          additionalProperties: true
+          description: The payload data to validate
+
+    # Validation result schema
+    ModularValidationResult:
+      type: object
+      required:
+        - is_valid
+        - model_type
+        - provider
+        - validation_profile
+        - timestamp
+        - processing_duration
+      properties:
+        is_valid:
+          type: boolean
+          description: Overall validation status
+        model_type:
+          type: string
+          example: "GitHubPayload"
+          description: Type of model that was validated
+        provider:
+          type: string
+          example: "github_validator"
+          description: Validation provider used
+        validation_profile:
+          type: string
+          enum: [strict, permissive, minimal]
+          example: "strict"
+          description: Validation profile applied
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModularValidationError'
+          description: List of validation errors
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModularValidationWarning'
+          description: List of validation warnings
+        timestamp:
+          type: string
+          format: date-time
+          description: Validation completion timestamp
+        processing_duration:
+          type: integer
+          example: 25000
+          description: Processing duration in nanoseconds
+        performance_metrics:
+          $ref: '#/components/schemas/PerformanceMetrics'
+        request_id:
+          type: string
+          example: "val_1234567890123456789"
+          description: Unique request identifier
+        context:
+          type: object
+          additionalProperties: true
+          description: Additional validation context and metadata
+
+    ModularValidationError:
+      type: object
+      required:
+        - field
+        - message
+        - code
+        - path
+        - severity
+      properties:
+        field:
+          type: string
+          example: "NodeID"
+          description: Field name that failed validation
+        message:
+          type: string
+          example: "Field 'NodeID' is required for GitHub webhook validation"
+          description: Human-readable error message
+        code:
+          type: string
+          example: "required"
+          description: Validation rule code that failed
+        value:
+          description: Actual value that caused the failure
+        expected:
+          type: string
+          description: Expected value or format
+        constraint:
+          type: string
+          example: "required"
+          description: Validation constraint that was violated
+        path:
+          type: string
+          example: "GitHubPayload.PullRequest.NodeID"
+          description: Full path to the field in the data structure
+        severity:
+          type: string
+          enum: [error, warning, info]
+          example: "error"
+          description: Error severity level
+
+    ModularValidationWarning:
+      type: object
+      required:
+        - field
+        - message
+        - code
+      properties:
+        field:
+          type: string
+          example: "PullRequest.Title"
+          description: Field name related to the warning
+        message:
+          type: string
+          example: "This appears to be a work-in-progress pull request"
+          description: Human-readable warning message
+        code:
+          type: string
+          example: "WIP_DETECTED"
+          description: Warning code for programmatic handling
+        value:
+          description: Field value that triggered the warning
+        suggestion:
+          type: string
+          example: "Consider addressing this validation issue"
+          description: Suggested action to resolve the warning
+        category:
+          type: string
+          example: "business-logic"
+          description: Warning category
+        path:
+          type: string
+          description: Path to the field that triggered the warning
+
+    PerformanceMetrics:
+      type: object
+      properties:
+        validation_duration:
+          type: integer
+          example: 25250
+          description: Validation duration in nanoseconds
+        provider:
+          type: string
+          example: "github_validator"
+          description: Validation provider identifier
+        rule_count:
+          type: integer
+          example: 30
+          description: Number of validation rules applied
+        field_count:
+          type: integer
+          example: 45
+          description: Number of fields validated
+
+    # Platform-specific payload schemas (simplified for Swagger)
+    GitHubPayload:
+      type: object
+      required:
+        - action
+        - number
+        - pull_request
+        - repository
+      properties:
+        action:
+          type: string
+          enum: [opened, closed, reopened, edited, synchronize]
+          description: GitHub webhook action
+        number:
+          type: integer
+          minimum: 1
+          description: Pull request number
+        pull_request:
+          $ref: '#/components/schemas/GitHubPullRequest'
+        repository:
+          $ref: '#/components/schemas/GitHubRepository'
+
+    GitHubPullRequest:
+      type: object
+      required:
+        - id
+        - number
+        - title
+        - state
+        - user
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        number:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          enum: [open, closed]
+        body:
+          type: string
+          nullable: true
+        user:
+          $ref: '#/components/schemas/GitHubUser'
+
+    GitHubRepository:
+      type: object
+      required:
+        - id
+        - name
+        - full_name
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+        full_name:
+          type: string
+          pattern: '^[^/]+/[^/]+$'
+
+    GitHubUser:
+      type: object
+      required:
+        - login
+        - id
+      properties:
+        login:
+          type: string
+          minLength: 1
+          maxLength: 39
+        id:
+          type: integer
+          minimum: 1
+
+    GitLabPayload:
+      type: object
+      required:
+        - object_kind
+        - project
+        - user
+      properties:
+        object_kind:
+          type: string
+          enum: [merge_request, push, issue]
+        project:
+          $ref: '#/components/schemas/GitLabProject'
+        user:
+          $ref: '#/components/schemas/GitLabUser'
+
+    GitLabProject:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+
+    GitLabUser:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    BitbucketPayload:
+      type: object
+      required:
+        - repository
+        - actor
+        - pullrequest
+      properties:
+        repository:
+          $ref: '#/components/schemas/BitbucketRepository'
+        actor:
+          $ref: '#/components/schemas/BitbucketUser'
+        pullrequest:
+          $ref: '#/components/schemas/BitbucketPullRequest'
+
+    BitbucketRepository:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    BitbucketUser:
+      type: object
+      required:
+        - display_name
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+
+    BitbucketPullRequest:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+          minimum: 1
+
+    SlackMessagePayload:
+      type: object
+      required:
+        - text
+        - channel
+        - user
+        - team
+        - timestamp
+      properties:
+        text:
+          type: string
+          minLength: 1
+          description: Message text content
+        channel:
+          type: string
+          minLength: 1
+          description: Channel name or ID
+        user:
+          type: string
+          minLength: 1
+          description: Username
+        team:
+          type: string
+          minLength: 1
+          description: Team identifier
+        timestamp:
+          type: string
+          minLength: 1
+          description: Message timestamp
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - status
+      properties:
+        error:
+          type: string
+          description: Error message
+        status:
+          type: integer
+          description: HTTP status code
+        details:
+          type: string
+          description: Additional error details
+
+tags:
+  - name: System
+    description: System health, status and model discovery
+  - name: Platform Validation
+    description: Platform-specific validation endpoints for GitHub, GitLab, Bitbucket, and Slack
+  - name: Generic Validation
+    description: Generic validation endpoint with automatic type conversion

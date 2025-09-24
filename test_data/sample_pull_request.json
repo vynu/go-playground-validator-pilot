@@ -1,0 +1,152 @@
+{
+  "action": "opened",
+  "number": 123,
+  "pull_request": {
+    "id": 1,
+    "number": 123,
+    "state": "open",
+    "title": "Add new feature for user authentication",
+    "body": "This PR implements OAuth2 authentication with JWT tokens.\n\n## Changes\n- Added OAuth2 provider\n- Implemented JWT middleware\n- Updated user model\n- Added tests\n\n## Testing\nRan unit tests and integration tests.",
+    "created_at": "2025-09-21T12:00:00Z",
+    "updated_at": "2025-09-21T12:30:00Z",
+    "closed_at": null,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "draft": false,
+    "head": {
+      "label": "feature/oauth2-auth",
+      "ref": "feature/oauth2-auth",
+      "sha": "a1b2c3d4e5f6789012345678901234567890abcd",
+      "user": {
+        "id": 12345,
+        "login": "developer123",
+        "avatar_url": "https://avatars.githubusercontent.com/u/12345?v=4",
+        "type": "User"
+      },
+      "repo": {
+        "id": 98765,
+        "name": "awesome-project",
+        "full_name": "myorg/awesome-project",
+        "private": false,
+        "owner": {
+          "id": 67890,
+          "login": "myorg",
+          "avatar_url": "https://avatars.githubusercontent.com/u/67890?v=4",
+          "type": "Organization"
+        },
+        "html_url": "https://github.com/myorg/awesome-project",
+        "description": "An awesome web application",
+        "clone_url": "https://github.com/myorg/awesome-project.git",
+        "ssh_url": "git@github.com:myorg/awesome-project.git",
+        "default_branch": "main"
+      }
+    },
+    "base": {
+      "label": "main",
+      "ref": "main",
+      "sha": "f1e2d3c4b5a6789012345678901234567890fedc",
+      "user": {
+        "id": 67890,
+        "login": "myorg",
+        "avatar_url": "https://avatars.githubusercontent.com/u/67890?v=4",
+        "type": "Organization"
+      },
+      "repo": {
+        "id": 98765,
+        "name": "awesome-project",
+        "full_name": "myorg/awesome-project",
+        "private": false,
+        "owner": {
+          "id": 67890,
+          "login": "myorg",
+          "avatar_url": "https://avatars.githubusercontent.com/u/67890?v=4",
+          "type": "Organization"
+        },
+        "html_url": "https://github.com/myorg/awesome-project",
+        "description": "An awesome web application",
+        "clone_url": "https://github.com/myorg/awesome-project.git",
+        "ssh_url": "git@github.com:myorg/awesome-project.git",
+        "default_branch": "main"
+      }
+    },
+    "user": {
+      "id": 12345,
+      "login": "developer123",
+      "avatar_url": "https://avatars.githubusercontent.com/u/12345?v=4",
+      "type": "User"
+    },
+    "assignee": null,
+    "assignees": [],
+    "requested_reviewers": [
+      {
+        "id": 54321,
+        "login": "reviewer1",
+        "avatar_url": "https://avatars.githubusercontent.com/u/54321?v=4",
+        "type": "User"
+      }
+    ],
+    "requested_teams": [],
+    "labels": [
+      {
+        "id": 1,
+        "name": "enhancement",
+        "color": "a2eeef",
+        "description": "New feature or request"
+      },
+      {
+        "id": 2,
+        "name": "authentication",
+        "color": "d73a4a",
+        "description": "Authentication related changes"
+      }
+    ],
+    "milestone": null,
+    "commits_url": "https://api.github.com/repos/myorg/awesome-project/pulls/123/commits",
+    "review_comments_url": "https://api.github.com/repos/myorg/awesome-project/pulls/123/comments",
+    "comments_url": "https://api.github.com/repos/myorg/awesome-project/issues/123/comments",
+    "statuses_url": "https://api.github.com/repos/myorg/awesome-project/statuses/a1b2c3d4e5f6789012345678901234567890abcd",
+    "additions": 245,
+    "deletions": 12,
+    "changed_files": 8
+  },
+  "repository": {
+    "id": 98765,
+    "name": "awesome-project",
+    "full_name": "myorg/awesome-project",
+    "private": false,
+    "owner": {
+      "id": 67890,
+      "login": "myorg",
+      "avatar_url": "https://avatars.githubusercontent.com/u/67890?v=4",
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/myorg/awesome-project",
+    "description": "An awesome web application",
+    "clone_url": "https://github.com/myorg/awesome-project.git",
+    "ssh_url": "git@github.com:myorg/awesome-project.git",
+    "default_branch": "main",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2025-09-21T11:45:00Z",
+    "pushed_at": "2025-09-21T12:00:00Z",
+    "size": 2048,
+    "stargazers_count": 42,
+    "watchers_count": 15,
+    "language": "Go",
+    "has_issues": true,
+    "has_projects": true,
+    "has_wiki": true,
+    "has_downloads": true,
+    "archived": false,
+    "disabled": false,
+    "open_issues_count": 3,
+    "forks_count": 7,
+    "topics": ["go", "web", "authentication", "oauth2"],
+    "visibility": "public"
+  },
+  "sender": {
+    "id": 12345,
+    "login": "developer123",
+    "avatar_url": "https://avatars.githubusercontent.com/u/12345?v=4",
+    "type": "User"
+  }
+}
