@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github-data-validator/models"
 	"github.com/go-playground/validator/v10"
+	"goplayground-data-validator/models"
 )
 
 // Global request counter for metrics

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github-data-validator/models"
 	"github.com/go-playground/validator/v10"
+	"goplayground-data-validator/models"
 )
 
 // GenericValidator provides generic validation functionality.

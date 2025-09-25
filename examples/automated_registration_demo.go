@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 
-	"github-data-validator/registry"
+	"goplayground-data-validator/registry"
 )
 
 func main() {

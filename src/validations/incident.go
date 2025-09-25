@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github-data-validator/models"
 	"github.com/go-playground/validator/v10"
+	"goplayground-data-validator/models"
 )
 
 // IncidentValidator handles validation for Incident payloads with 2 custom validations

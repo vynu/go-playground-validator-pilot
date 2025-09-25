@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github-data-validator/models"
 	"github.com/go-playground/validator/v10"
+	"goplayground-data-validator/models"
 )
 
 // DeploymentValidator handles validation for Deployment payloads
