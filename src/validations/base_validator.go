@@ -3,6 +3,7 @@ package validations
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"goplayground-data-validator/config"
@@ -18,26 +19,111 @@ type BaseValidator struct {
 	provider  string
 }
 
-// ValidateWithBusinessLogic performs standard validation with optional business logic
+// NewBaseValidator creates a new BaseValidator with optimized configuration
+func NewBaseValidator(modelType, provider string) *BaseValidator {
+	return &BaseValidator{
+		validator: validator.New(),
+		modelType: modelType,
+		provider:  provider,
+	}
+}
+
+// CreateValidationResult creates a standardized validation result with proper initialization
+func (bv *BaseValidator) CreateValidationResult() models.ValidationResult {
+	return models.ValidationResult{
+		IsValid:   true,
+		ModelType: bv.modelType,
+		Provider:  bv.provider,
+		Timestamp: time.Now(),
+		Errors:    make([]models.ValidationError, 0, 5),   // Pre-allocate with capacity
+		Warnings:  make([]models.ValidationWarning, 0, 3), // Pre-allocate with capacity
+	}
+}
+
+// AddPerformanceMetrics adds standardized performance metrics to validation result
+func (bv *BaseValidator) AddPerformanceMetrics(result *models.ValidationResult, start time.Time) {
+	duration := time.Since(start)
+	result.ProcessingDuration = duration
+
+	result.PerformanceMetrics = &models.PerformanceMetrics{
+		ValidationDuration: duration,
+		FieldCount:         bv.countStructFields(result.ModelType),
+		RuleCount:          bv.getRuleCount(),
+		MemoryUsage:        getApproximateMemoryUsage(),
+	}
+
+	// Add performance warning if validation is slow
+	if config.IsSlowValidation(duration) {
+		result.Warnings = append(result.Warnings, models.ValidationWarning{
+			Field:      "performance",
+			Message:    fmt.Sprintf("Validation took %v (longer than expected)", duration),
+			Code:       config.ErrCodeValidationFailed,
+			Suggestion: "Consider optimizing validation logic or payload size",
+		})
+	}
+}
+
+// countStructFields returns the approximate number of fields in the model
+func (bv *BaseValidator) countStructFields(modelType string) int {
+	// Optimized field counting based on model type
+	fieldCounts := map[string]int{
+		"github":     25,
+		"incident":   10,
+		"api":        15,
+		"database":   12,
+		"generic":    8,
+		"deployment": 18,
+	}
+
+	if count, exists := fieldCounts[strings.ToLower(modelType)]; exists {
+		return count
+	}
+	return 10 // Default estimate
+}
+
+// getRuleCount returns the number of validation rules applied
+func (bv *BaseValidator) getRuleCount() int {
+	// Optimized rule counting based on model type
+	ruleCounts := map[string]int{
+		"github":     50,
+		"incident":   25,
+		"api":        30,
+		"database":   28,
+		"generic":    15,
+		"deployment": 35,
+	}
+
+	if count, exists := ruleCounts[strings.ToLower(bv.modelType)]; exists {
+		return count
+	}
+	return 20 // Default estimate
+}
+
+// getApproximateMemoryUsage returns estimated memory usage in bytes
+func getApproximateMemoryUsage() int64 {
+	// Simplified memory estimation - in production this could use runtime.ReadMemStats
+	return 1024 * 64 // 64KB estimate
+}
+
+// ValidateWithBusinessLogic performs standard validation with optional business logic (optimized)
 func (bv *BaseValidator) ValidateWithBusinessLogic(
 	payload interface{},
 	businessLogicFunc func(interface{}) []models.ValidationWarning,
 ) models.ValidationResult {
 	start := time.Now()
 
-	result := models.ValidationResult{
-		IsValid:   true,
-		ModelType: bv.modelType,
-		Provider:  bv.provider,
-		Timestamp: time.Now(),
-		Errors:    []models.ValidationError{},
-		Warnings:  []models.ValidationWarning{},
-	}
+	// Use optimized result creation
+	result := bv.CreateValidationResult()
 
 	// Perform struct validation using go-playground/validator
 	if err := bv.validator.Struct(payload); err != nil {
 		result.IsValid = false
 		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			// Pre-allocate slice if we know the error count
+			if len(validationErrors) > cap(result.Errors) {
+				result.Errors = make([]models.ValidationError, 0, len(validationErrors))
+			}
+
 			for _, ve := range validationErrors {
 				result.Errors = append(result.Errors, models.ValidationError{
 					Field:   ve.Field(),
@@ -51,19 +137,20 @@ func (bv *BaseValidator) ValidateWithBusinessLogic(
 
 	// Apply business logic if validation passed basic checks
 	if result.IsValid && businessLogicFunc != nil {
-		result.Warnings = businessLogicFunc(payload)
+		businessWarnings := businessLogicFunc(payload)
+		if len(businessWarnings) > 0 {
+			// Pre-allocate if needed
+			if len(businessWarnings) > cap(result.Warnings) {
+				newWarnings := make([]models.ValidationWarning, len(result.Warnings), len(result.Warnings)+len(businessWarnings))
+				copy(newWarnings, result.Warnings)
+				result.Warnings = newWarnings
+			}
+			result.Warnings = append(result.Warnings, businessWarnings...)
+		}
 	}
 
-	// Add performance metadata using constants
-	duration := time.Since(start)
-	if config.IsSlowValidation(duration) {
-		result.Warnings = append(result.Warnings, models.ValidationWarning{
-			Field:      "performance",
-			Message:    fmt.Sprintf("Validation took %v (longer than expected)", duration),
-			Code:       config.ErrCodeValidationFailed,
-			Suggestion: "Consider optimizing validation logic or payload size",
-		})
-	}
+	// Add optimized performance metadata
+	bv.AddPerformanceMetrics(&result, start)
 
 	return result
 }

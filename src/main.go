@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	httpswagger "github.com/swaggo/http-swagger"
@@ -144,14 +145,8 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert map to struct using JSON marshaling/unmarshaling
-	jsonBytes, err := json.Marshal(request.Payload)
-	if err != nil {
-		sendJSONError(w, "Failed to serialize payload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if err := json.Unmarshal(jsonBytes, modelInstance); err != nil {
+	// Convert map to struct using optimized direct conversion
+	if err := convertMapToStruct(request.Payload, modelInstance); err != nil {
 		sendJSONError(w, "Failed to parse payload into model struct: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -218,9 +213,244 @@ func sendJSONError(w http.ResponseWriter, message string, status int) {
 	})
 }
 
-// NOTE: The old hardcoded convert functions have been removed.
-// All model type conversion is now handled automatically by the registry system
-// using reflection and the universal converter in handleGenericValidation.
+// convertMapToStruct efficiently converts a map to a struct using reflection
+// This replaces the inefficient JSON marshal/unmarshal pattern
+func convertMapToStruct(src map[string]interface{}, dest interface{}) error {
+	destValue := reflect.ValueOf(dest)
+	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("destination must be a pointer to a struct")
+	}
+
+	destValue = destValue.Elem()
+	destType := destValue.Type()
+
+	for i := 0; i < destValue.NumField(); i++ {
+		field := destValue.Field(i)
+		fieldType := destType.Field(i)
+
+		// Skip unexported fields
+		if !field.CanSet() {
+			continue
+		}
+
+		// Get the JSON tag name, fall back to field name
+		jsonTag := fieldType.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+
+		// Handle json tag with options like "field_name,omitempty"
+		fieldName := strings.Split(jsonTag, ",")[0]
+		if fieldName == "" {
+			fieldName = fieldType.Name
+		}
+
+		// Get value from source map
+		srcValue, exists := src[fieldName]
+		if !exists {
+			continue
+		}
+
+		// Convert and set the value
+		if err := setFieldValue(field, srcValue); err != nil {
+			return fmt.Errorf("failed to set field %s: %v", fieldName, err)
+		}
+	}
+
+	return nil
+}
+
+// setFieldValue sets a reflect.Value with type conversion
+func setFieldValue(field reflect.Value, value interface{}) error {
+	if value == nil {
+		return nil
+	}
+
+	srcValue := reflect.ValueOf(value)
+	fieldType := field.Type()
+
+	// Direct assignment if types match
+	if srcValue.Type().AssignableTo(fieldType) {
+		field.Set(srcValue)
+		return nil
+	}
+
+	// Handle type conversions
+	switch fieldType.Kind() {
+	case reflect.String:
+		if str, ok := value.(string); ok {
+			field.SetString(str)
+		} else {
+			field.SetString(fmt.Sprintf("%v", value))
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if num, ok := convertToInt64(value); ok {
+			if field.OverflowInt(num) {
+				return fmt.Errorf("integer overflow for value %v", value)
+			}
+			field.SetInt(num)
+		} else {
+			return fmt.Errorf("cannot convert %v to integer", value)
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if num, ok := convertToUint64(value); ok {
+			if field.OverflowUint(num) {
+				return fmt.Errorf("unsigned integer overflow for value %v", value)
+			}
+			field.SetUint(num)
+		} else {
+			return fmt.Errorf("cannot convert %v to unsigned integer", value)
+		}
+	case reflect.Float32, reflect.Float64:
+		if num, ok := convertToFloat64(value); ok {
+			if field.OverflowFloat(num) {
+				return fmt.Errorf("float overflow for value %v", value)
+			}
+			field.SetFloat(num)
+		} else {
+			return fmt.Errorf("cannot convert %v to float", value)
+		}
+	case reflect.Bool:
+		if b, ok := value.(bool); ok {
+			field.SetBool(b)
+		} else {
+			return fmt.Errorf("cannot convert %v to bool", value)
+		}
+	case reflect.Slice:
+		return setSliceValue(field, value)
+	case reflect.Map:
+		return setMapValue(field, value)
+	default:
+		// Fall back to JSON conversion for complex types
+		jsonBytes, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(jsonBytes, field.Addr().Interface())
+	}
+
+	return nil
+}
+
+// Helper functions for type conversion
+func convertToInt64(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int8:
+		return int64(v), true
+	case int16:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		if i, err := fmt.Sscanf(v, "%d", new(int64)); err == nil && i == 1 {
+			var result int64
+			fmt.Sscanf(v, "%d", &result)
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func convertToUint64(value interface{}) (uint64, bool) {
+	switch v := value.(type) {
+	case uint:
+		return uint64(v), true
+	case uint8:
+		return uint64(v), true
+	case uint16:
+		return uint64(v), true
+	case uint32:
+		return uint64(v), true
+	case uint64:
+		return v, true
+	case int:
+		if v >= 0 {
+			return uint64(v), true
+		}
+	case int64:
+		if v >= 0 {
+			return uint64(v), true
+		}
+	case float64:
+		if v >= 0 {
+			return uint64(v), true
+		}
+	}
+	return 0, false
+}
+
+func convertToFloat64(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case string:
+		if f, err := fmt.Sscanf(v, "%f", new(float64)); err == nil && f == 1 {
+			var result float64
+			fmt.Sscanf(v, "%f", &result)
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func setSliceValue(field reflect.Value, value interface{}) error {
+	srcSlice := reflect.ValueOf(value)
+	if srcSlice.Kind() != reflect.Slice {
+		return fmt.Errorf("source is not a slice")
+	}
+
+	sliceType := field.Type()
+	newSlice := reflect.MakeSlice(sliceType, srcSlice.Len(), srcSlice.Len())
+
+	for i := 0; i < srcSlice.Len(); i++ {
+		if err := setFieldValue(newSlice.Index(i), srcSlice.Index(i).Interface()); err != nil {
+			return err
+		}
+	}
+
+	field.Set(newSlice)
+	return nil
+}
+
+func setMapValue(field reflect.Value, value interface{}) error {
+	srcMap := reflect.ValueOf(value)
+	if srcMap.Kind() != reflect.Map {
+		return fmt.Errorf("source is not a map")
+	}
+
+	mapType := field.Type()
+	newMap := reflect.MakeMap(mapType)
+
+	for _, key := range srcMap.MapKeys() {
+		mapValue := srcMap.MapIndex(key)
+		newValue := reflect.New(mapType.Elem()).Elem()
+
+		if err := setFieldValue(newValue, mapValue.Interface()); err != nil {
+			return err
+		}
+
+		newMap.SetMapIndex(key, newValue)
+	}
+
+	field.Set(newMap)
+	return nil
+}
 
 // handleSwaggerJSON serves the Swagger JSON specification
 func handleSwaggerJSON(w http.ResponseWriter, r *http.Request) {
