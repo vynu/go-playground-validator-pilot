@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"goplayground-data-validator/models"
 	"goplayground-data-validator/validations"
@@ -169,12 +170,13 @@ func (ur *UnifiedRegistry) discoverModelStruct(baseName string) (reflect.Type, s
 
 	// Try different naming patterns
 	possibleNames := discoveredStructs
+	titleCase := toTitleCase(baseName)
 	possibleNames = append(possibleNames,
-		strings.Title(baseName)+"Payload",
-		strings.Title(baseName)+"Model",
-		strings.Title(baseName)+"Request",
-		strings.Title(baseName)+"Data",
-		strings.Title(baseName),
+		titleCase+"Payload",
+		titleCase+"Model",
+		titleCase+"Request",
+		titleCase+"Data",
+		titleCase,
 	)
 
 	// Get known model types
@@ -229,12 +231,12 @@ func (ur *UnifiedRegistry) createValidatorInstance(baseName string) (interface{}
 	if special, exists := specialCases[baseName]; exists {
 		titleCase = special
 	} else {
-		titleCase = strings.Title(baseName)
+		titleCase = toTitleCase(baseName)
 	}
 
 	possibleNames := []string{
 		"New" + titleCase + "Validator",                 // NewGitHubValidator, NewAPIValidator
-		"New" + strings.Title(baseName) + "Validator",   // NewGithubValidator
+		"New" + toTitleCase(baseName) + "Validator",     // NewGithubValidator
 		"New" + strings.ToUpper(baseName) + "Validator", // NewGITHUBValidator
 	}
 
@@ -291,10 +293,10 @@ func (ur *UnifiedRegistry) generateModelName(baseName, structName string) string
 	}
 
 	if strings.Contains(strings.ToLower(structName), "payload") {
-		return strings.Title(baseName) + " Payload"
+		return toTitleCase(baseName) + " Payload"
 	}
 
-	return strings.Title(baseName) + " Data"
+	return toTitleCase(baseName) + " Data"
 }
 
 // generateModelDescription creates model descriptions
@@ -312,7 +314,7 @@ func (ur *UnifiedRegistry) generateModelDescription(baseName string) string {
 		return desc
 	}
 
-	return fmt.Sprintf("Automatically discovered %s validation with comprehensive business rules", strings.Title(baseName))
+	return fmt.Sprintf("Automatically discovered %s validation with comprehensive business rules", toTitleCase(baseName))
 }
 
 // generateModelTags creates appropriate tags
@@ -488,7 +490,9 @@ func (ur *UnifiedRegistry) createDynamicHandler(modelType ModelType, modelInfo *
 		}
 
 		// Send response
-		json.NewEncoder(w).Encode(result)
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
 	}
 }
 
@@ -496,11 +500,13 @@ func (ur *UnifiedRegistry) createDynamicHandler(modelType ModelType, modelInfo *
 func (ur *UnifiedRegistry) sendJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"error":     message,
 		"status":    statusCode,
 		"timestamp": time.Now().Format(time.RFC3339),
-	})
+	}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
 }
 
 // GetModelStats returns registry statistics
@@ -554,6 +560,31 @@ func GetGlobalRegistry() *UnifiedRegistry {
 		globalUnifiedRegistry = NewUnifiedRegistry("src/models", "src/validations")
 	}
 	return globalUnifiedRegistry
+}
+
+// toTitleCase converts a string to title case (replacement for deprecated strings.Title)
+func toTitleCase(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	runes := []rune(s)
+	result := make([]rune, len(runes))
+
+	makeUpper := true
+	for i, r := range runes {
+		if unicode.IsSpace(r) || r == '_' || r == '-' {
+			result[i] = r
+			makeUpper = true
+		} else if makeUpper {
+			result[i] = unicode.ToUpper(r)
+			makeUpper = false
+		} else {
+			result[i] = unicode.ToLower(r)
+		}
+	}
+
+	return string(result)
 }
 
 // FileSystemWatcher methods removed - using simple startup-only registration

@@ -18,15 +18,6 @@ type BaseValidator struct {
 	provider  string
 }
 
-// NewBaseValidator creates a new base validator instance
-func NewBaseValidator(modelType, provider string) *BaseValidator {
-	return &BaseValidator{
-		validator: validator.New(),
-		modelType: modelType,
-		provider:  provider,
-	}
-}
-
 // ValidateWithBusinessLogic performs standard validation with optional business logic
 func (bv *BaseValidator) ValidateWithBusinessLogic(
 	payload interface{},
@@ -147,7 +138,7 @@ func CountStructFields(payload interface{}) int {
 }
 
 // GetStructFieldNames returns the names of all fields in a struct
-func GetStructFieldNames(payload interface{}) []string {
+func GetStructFieldNames(_ interface{}) []string {
 	fieldNames := []string{}
 
 	// Use reflection to get field names - this is a placeholder
@@ -161,81 +152,4 @@ func GetStructFieldNames(payload interface{}) []string {
 func IsLargePayload(payload interface{}) bool {
 	fieldCount := CountStructFields(payload)
 	return config.IsLargePayload(fieldCount)
-}
-
-// AddPerformanceWarnings adds performance-related warnings based on validation complexity
-func AddPerformanceWarnings(result *models.ValidationResult, payload interface{}, duration time.Duration) {
-	if IsLargePayload(payload) {
-		result.Warnings = append(result.Warnings, models.ValidationWarning{
-			Field:      "payload_size",
-			Message:    "Large payload detected - consider splitting into smaller requests",
-			Code:       config.ErrCodeLargePayload,
-			Suggestion: "Split large payloads into smaller, focused requests for better performance",
-		})
-	}
-
-	if config.IsVerySlowValidation(duration) {
-		result.Warnings = append(result.Warnings, models.ValidationWarning{
-			Field:      "response_time",
-			Message:    fmt.Sprintf("Validation took %v (exceeds threshold)", duration),
-			Code:       config.ErrCodeSlowValidation,
-			Suggestion: "Consider optimizing validation logic or reducing payload complexity",
-		})
-	}
-}
-
-// ValidateStringField provides common string field validation
-func ValidateStringField(value, fieldName string, minLength, maxLength int) *models.ValidationError {
-	if strings.TrimSpace(value) == "" {
-		return &models.ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("Field '%s' cannot be empty", fieldName),
-			Code:    "EMPTY_STRING_FIELD",
-			Value:   value,
-		}
-	}
-
-	if len(value) < minLength {
-		return &models.ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("Field '%s' must be at least %d characters", fieldName, minLength),
-			Code:    "STRING_TOO_SHORT",
-			Value:   value,
-		}
-	}
-
-	if len(value) > maxLength {
-		return &models.ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("Field '%s' must be at most %d characters", fieldName, maxLength),
-			Code:    "STRING_TOO_LONG",
-			Value:   value,
-		}
-	}
-
-	return nil
-}
-
-// ValidateEmailField provides consistent email validation
-func ValidateEmailField(email, fieldName string) *models.ValidationError {
-	if email == "" {
-		return &models.ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("Field '%s' is required", fieldName),
-			Code:    "REQUIRED_FIELD_MISSING",
-			Value:   email,
-		}
-	}
-
-	// Basic email validation - could be enhanced with regex
-	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
-		return &models.ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("Field '%s' must be a valid email address", fieldName),
-			Code:    "INVALID_EMAIL_FORMAT",
-			Value:   email,
-		}
-	}
-
-	return nil
 }
