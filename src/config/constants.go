@@ -7,9 +7,6 @@ import "time"
 const (
 	// Performance thresholds
 	SlowValidationThreshold = 100 * time.Millisecond
-
-	// Size thresholds
-	LargePayloadFieldCount = 50
 )
 
 // Error codes for standardized error handling
