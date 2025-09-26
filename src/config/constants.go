@@ -6,8 +6,7 @@ import "time"
 // Validation Thresholds
 const (
 	// Performance thresholds
-	SlowValidationThreshold     = 100 * time.Millisecond
-	VerySlowValidationThreshold = 5 * time.Second
+	SlowValidationThreshold = 100 * time.Millisecond
 
 	// Size thresholds
 	LargePayloadFieldCount = 50
@@ -24,11 +23,6 @@ const (
 	ErrCodeInvalidURL       = "INVALID_URL_FORMAT"
 	ErrCodeInvalidEnum      = "INVALID_ENUM_VALUE"
 )
-
-// IsLargePayload checks if a payload exceeds the size threshold
-func IsLargePayload(fieldCount int) bool {
-	return fieldCount > LargePayloadFieldCount
-}
 
 // IsSlowValidation checks if validation time exceeds threshold
 func IsSlowValidation(duration time.Duration) bool {

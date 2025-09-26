@@ -131,14 +131,3 @@ func GetErrorCode(tag string) string {
 		return config.ErrCodeValidationFailed
 	}
 }
-
-// GetStructFieldNames returns the names of all fields in a struct
-func GetStructFieldNames(_ interface{}) []string {
-	fieldNames := []string{}
-
-	// Use reflection to get field names - this is a placeholder
-	// The actual implementation would use reflect package
-	// For now, returning empty slice to avoid compilation issues
-
-	return fieldNames
-}
