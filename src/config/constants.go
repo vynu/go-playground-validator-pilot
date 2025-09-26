@@ -23,8 +23,6 @@ const (
 	ErrCodeInvalidEmail     = "INVALID_EMAIL_FORMAT"
 	ErrCodeInvalidURL       = "INVALID_URL_FORMAT"
 	ErrCodeInvalidEnum      = "INVALID_ENUM_VALUE"
-	ErrCodeSlowValidation   = "SLOW_VALIDATION"
-	ErrCodeLargePayload     = "LARGE_PAYLOAD"
 )
 
 // IsLargePayload checks if a payload exceeds the size threshold
@@ -35,9 +33,4 @@ func IsLargePayload(fieldCount int) bool {
 // IsSlowValidation checks if validation time exceeds threshold
 func IsSlowValidation(duration time.Duration) bool {
 	return duration > SlowValidationThreshold
-}
-
-// IsVerySlowValidation checks if validation time exceeds severe threshold
-func IsVerySlowValidation(duration time.Duration) bool {
-	return duration > VerySlowValidationThreshold
 }

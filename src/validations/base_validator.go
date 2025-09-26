@@ -3,12 +3,12 @@ package validations
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	"goplayground-data-validator/config"
 	"goplayground-data-validator/models"
+
+	"github.com/go-playground/validator/v10"
 )
 
 // BaseValidator provides common validation functionality shared across all validators
@@ -60,7 +60,7 @@ func (bv *BaseValidator) ValidateWithBusinessLogic(
 		result.Warnings = append(result.Warnings, models.ValidationWarning{
 			Field:      "performance",
 			Message:    fmt.Sprintf("Validation took %v (longer than expected)", duration),
-			Code:       config.WarnCodePerformance,
+			Code:       config.ErrCodeValidationFailed,
 			Suggestion: "Consider optimizing validation logic or payload size",
 		})
 	}
@@ -132,11 +132,6 @@ func GetErrorCode(tag string) string {
 	}
 }
 
-// CountStructFields counts the number of fields in a struct using reflection
-func CountStructFields(payload interface{}) int {
-	return len(GetStructFieldNames(payload))
-}
-
 // GetStructFieldNames returns the names of all fields in a struct
 func GetStructFieldNames(_ interface{}) []string {
 	fieldNames := []string{}
@@ -146,10 +141,4 @@ func GetStructFieldNames(_ interface{}) []string {
 	// For now, returning empty slice to avoid compilation issues
 
 	return fieldNames
-}
-
-// IsLargePayload checks if a payload exceeds size thresholds
-func IsLargePayload(payload interface{}) bool {
-	fieldCount := CountStructFields(payload)
-	return config.IsLargePayload(fieldCount)
 }

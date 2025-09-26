@@ -50,7 +50,7 @@ func NewUnifiedRegistry(modelsPath, validationsPath string) *UnifiedRegistry {
 }
 
 // StartAutoRegistration performs initial discovery and starts file system monitoring
-func (ur *UnifiedRegistry) StartAutoRegistration(ctx context.Context, mux *http.ServeMux) error {
+func (ur *UnifiedRegistry) StartAutoRegistration(_ context.Context, mux *http.ServeMux) error {
 	ur.mux = mux
 
 	log.Println("🚀 Starting unified automatic model registration system...")
