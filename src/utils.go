@@ -1,15 +1,18 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
 	"log"
+	"math/big"
+	mathRand "math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
-	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"goplayground-data-validator/models"
@@ -17,6 +20,11 @@ import (
 
 // Global request counter for metrics
 var requestCount int64
+
+// Initialize math/rand for fallback
+func init() {
+	mathRand.Seed(time.Now().UnixNano())
+}
 
 // Utility functions for the modular server
 
@@ -74,12 +82,19 @@ func generateRequestID() string {
 	return "req_" + randomString(16)
 }
 
-// randomString generates a random string of specified length
+// randomString generates a cryptographically secure random string of specified length
 func randomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[len(charset)/2] // Simple implementation
+		// Use crypto/rand for secure random generation
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			// Fallback to math/rand if crypto/rand fails (should never happen)
+			b[i] = charset[mathRand.Intn(len(charset))]
+		} else {
+			b[i] = charset[idx.Int64()]
+		}
 	}
 	return string(b)
 }
@@ -143,32 +158,12 @@ func convertValidationErrors(err error) []string {
 }
 
 // performBusinessValidation performs business logic validation
+// DEPRECATED: This function should be moved to the GitHub validator
+// Keeping for backward compatibility but will be removed in future versions
 func performBusinessValidation(payload *models.GitHubPayload) []string {
-	var warnings []string
-
-	// Check for WIP in title
-	if strings.Contains(strings.ToLower(payload.PullRequest.Title), "wip:") ||
-		strings.Contains(strings.ToLower(payload.PullRequest.Title), "[wip]") ||
-		strings.Contains(strings.ToLower(payload.PullRequest.Title), "work in progress") {
-		warnings = append(warnings, "PullRequest.Title: This appears to be a work-in-progress pull request (WIP_DETECTED)")
-	}
-
-	// Check for large changeset
-	totalChanges := payload.PullRequest.Additions + payload.PullRequest.Deletions
-	if totalChanges > 1000 {
-		warnings = append(warnings, fmt.Sprintf("PullRequest.Changes: This pull request has a large number of changes (%d additions/deletions) (LARGE_CHANGESET)", totalChanges))
-	}
-
-	// Check for missing description
-	bodyText := ""
-	if payload.PullRequest.Body != nil {
-		bodyText = *payload.PullRequest.Body
-	}
-	if len(strings.TrimSpace(bodyText)) < 10 {
-		warnings = append(warnings, "PullRequest.Body: Pull request description is too short or missing (MISSING_DESCRIPTION)")
-	}
-
-	return warnings
+	// This logic has been moved to the GitHub validator
+	// Returning empty slice to maintain compatibility
+	return []string{}
 }
 
 // handleShutdown handles graceful server shutdown

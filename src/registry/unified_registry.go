@@ -23,26 +23,7 @@ import (
 	"goplayground-data-validator/validations"
 )
 
-// FileSystemWatcher monitors file system changes for dynamic model updates
-type FileSystemWatcher struct {
-	modelsPath      string
-	validationsPath string
-	registry        *UnifiedRegistry
-	pollInterval    time.Duration
-	lastScan        map[string]time.Time
-	mutex          sync.RWMutex
-}
-
-// NewFileSystemWatcher creates a new file system watcher
-func NewFileSystemWatcher(modelsPath, validationsPath string, registry *UnifiedRegistry) *FileSystemWatcher {
-	return &FileSystemWatcher{
-		modelsPath:      modelsPath,
-		validationsPath: validationsPath,
-		registry:        registry,
-		pollInterval:    2 * time.Second,
-		lastScan:        make(map[string]time.Time),
-	}
-}
+// Removed FileSystemWatcher - keeping the system simple with startup-only registration
 
 // UnifiedRegistry is the single, consolidated registry system that handles:
 // - Automatic model discovery and registration
@@ -54,9 +35,7 @@ type UnifiedRegistry struct {
 	modelsPath      string
 	validationsPath string
 	mux             *http.ServeMux
-	watcher         *FileSystemWatcher
 	mutex           sync.RWMutex
-	isMonitoring    bool
 }
 
 // NewUnifiedRegistry creates a new unified registry instance
@@ -66,7 +45,6 @@ func NewUnifiedRegistry(modelsPath, validationsPath string) *UnifiedRegistry {
 		modelsPath:      modelsPath,
 		validationsPath: validationsPath,
 		mutex:           sync.RWMutex{},
-		isMonitoring:    false,
 	}
 }
 
@@ -84,10 +62,8 @@ func (ur *UnifiedRegistry) StartAutoRegistration(ctx context.Context, mux *http.
 	// Phase 2: Register HTTP endpoints for discovered models (only once)
 	ur.registerAllHTTPEndpoints()
 
-	// Phase 3: Start file system monitoring for ongoing changes (TODO: Fix HTTP re-registration issue)
-	// NOTE: Temporarily disabled to prevent HTTP endpoint conflicts
-	log.Println("🔄 File system monitoring temporarily disabled until HTTP re-registration is fixed")
-	ur.isMonitoring = false
+	// Phase 3: File system monitoring removed - keeping it simple with startup-only registration
+	log.Println("✅ Pure auto-registration completed - models will be discovered on each startup")
 
 	return nil
 }
@@ -257,8 +233,8 @@ func (ur *UnifiedRegistry) createValidatorInstance(baseName string) (interface{}
 	}
 
 	possibleNames := []string{
-		"New" + titleCase + "Validator",              // NewGitHubValidator, NewAPIValidator
-		"New" + strings.Title(baseName) + "Validator", // NewGithubValidator
+		"New" + titleCase + "Validator",                 // NewGitHubValidator, NewAPIValidator
+		"New" + strings.Title(baseName) + "Validator",   // NewGithubValidator
 		"New" + strings.ToUpper(baseName) + "Validator", // NewGITHUBValidator
 	}
 
@@ -540,7 +516,7 @@ func (ur *UnifiedRegistry) GetModelStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_models": len(ur.models),
 		"model_types":  modelTypes,
-		"monitoring":   ur.isMonitoring,
+		"monitoring":   false,
 	}
 }
 
@@ -575,173 +551,12 @@ var globalUnifiedRegistry *UnifiedRegistry
 // GetGlobalRegistry returns the global unified registry
 func GetGlobalRegistry() *UnifiedRegistry {
 	if globalUnifiedRegistry == nil {
-		globalUnifiedRegistry = NewUnifiedRegistry("models", "validations")
+		globalUnifiedRegistry = NewUnifiedRegistry("src/models", "src/validations")
 	}
 	return globalUnifiedRegistry
 }
 
-// Start begins monitoring the file system for the FileSystemWatcher
-func (fsw *FileSystemWatcher) Start(ctx context.Context) error {
-	log.Printf("👁️ Starting file system watcher (polling every %v)", fsw.pollInterval)
-
-	// Initial scan to establish baseline
-	if err := fsw.scanDirectories(); err != nil {
-		log.Printf("⚠️ Initial directory scan failed: %v", err)
-	}
-
-	ticker := time.NewTicker(fsw.pollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("🛑 File system watcher stopping...")
-			return ctx.Err()
-		case <-ticker.C:
-			if err := fsw.scanDirectories(); err != nil {
-				log.Printf("⚠️ Directory scan error: %v", err)
-			}
-		}
-	}
-}
-
-// scanDirectories scans both directories for changes
-func (fsw *FileSystemWatcher) scanDirectories() error {
-	fsw.mutex.Lock()
-	defer fsw.mutex.Unlock()
-
-	// Get current files
-	currentFiles := make(map[string]time.Time)
-
-	// Scan models directory
-	modelFiles, err := filepath.Glob(filepath.Join(fsw.modelsPath, "*.go"))
-	if err != nil {
-		return fmt.Errorf("scanning models directory: %w", err)
-	}
-
-	for _, file := range modelFiles {
-		info, err := os.Stat(file)
-		if err != nil {
-			continue
-		}
-		currentFiles[file] = info.ModTime()
-	}
-
-	// Scan validations directory
-	validationFiles, err := filepath.Glob(filepath.Join(fsw.validationsPath, "*.go"))
-	if err != nil {
-		return fmt.Errorf("scanning validations directory: %w", err)
-	}
-
-	for _, file := range validationFiles {
-		info, err := os.Stat(file)
-		if err != nil {
-			continue
-		}
-		currentFiles[file] = info.ModTime()
-	}
-
-	// Detect changes
-	fsw.detectChanges(currentFiles)
-
-	// Update last scan
-	fsw.lastScan = currentFiles
-
-	return nil
-}
-
-// detectChanges compares current files with last scan and triggers appropriate actions
-func (fsw *FileSystemWatcher) detectChanges(currentFiles map[string]time.Time) {
-	// Detect new/modified files
-	for filePath, modTime := range currentFiles {
-		if lastModTime, exists := fsw.lastScan[filePath]; !exists || modTime.After(lastModTime) {
-			fsw.handleFileChange(filePath, "created_or_modified")
-		}
-	}
-
-	// Detect deleted files
-	for filePath := range fsw.lastScan {
-		if _, exists := currentFiles[filePath]; !exists {
-			fsw.handleFileChange(filePath, "deleted")
-		}
-	}
-}
-
-// handleFileChange processes file system changes
-func (fsw *FileSystemWatcher) handleFileChange(filePath, action string) {
-	baseName := strings.TrimSuffix(filepath.Base(filePath), ".go")
-
-	// Skip test files
-	if strings.HasSuffix(baseName, "_test") {
-		return
-	}
-
-	// Determine if this is a model or validation file
-	isModelFile := strings.Contains(filePath, fsw.modelsPath)
-	isValidationFile := strings.Contains(filePath, fsw.validationsPath)
-
-	if !isModelFile && !isValidationFile {
-		return
-	}
-
-	switch action {
-	case "created_or_modified":
-		fsw.handleFileAddedOrModified(baseName, isModelFile, isValidationFile)
-	case "deleted":
-		fsw.handleFileDeleted(baseName, isModelFile, isValidationFile)
-	}
-}
-
-// handleFileAddedOrModified processes file additions or modifications
-func (fsw *FileSystemWatcher) handleFileAddedOrModified(baseName string, isModelFile, isValidationFile bool) {
-	log.Printf("📁 Detected file change: %s (model: %v, validation: %v)", baseName, isModelFile, isValidationFile)
-
-	// Check if both model and validation files exist
-	modelExists := fsw.fileExists(filepath.Join(fsw.modelsPath, baseName+".go"))
-	validationExists := fsw.fileExists(filepath.Join(fsw.validationsPath, baseName+".go"))
-
-	if modelExists && validationExists {
-		// Both files exist, register or re-register the model
-		if fsw.registry.IsRegistered(ModelType(baseName)) {
-			log.Printf("🔄 Re-registering modified model: %s", baseName)
-			// Unregister and re-register to pick up changes
-			fsw.registry.UnregisterModel(ModelType(baseName))
-		}
-
-		if err := fsw.registry.registerModelAutomatically(baseName); err != nil {
-			log.Printf("❌ Failed to register model %s: %v", baseName, err)
-		}
-	} else {
-		log.Printf("⚠️ Model %s incomplete (model: %v, validation: %v)", baseName, modelExists, validationExists)
-	}
-}
-
-// handleFileDeleted processes file deletions
-func (fsw *FileSystemWatcher) handleFileDeleted(baseName string, isModelFile, isValidationFile bool) {
-	log.Printf("🗑️ Detected file deletion: %s (model: %v, validation: %v)", baseName, isModelFile, isValidationFile)
-
-	// Check if both files still exist
-	modelExists := fsw.fileExists(filepath.Join(fsw.modelsPath, baseName+".go"))
-	validationExists := fsw.fileExists(filepath.Join(fsw.validationsPath, baseName+".go"))
-
-	// If either file is missing, unregister the model
-	if !modelExists || !validationExists {
-		if fsw.registry.IsRegistered(ModelType(baseName)) {
-			log.Printf("🔥 Model %s is incomplete (model: %v, validation: %v) - unregistering", baseName, modelExists, validationExists)
-			if err := fsw.registry.UnregisterModel(ModelType(baseName)); err != nil {
-				log.Printf("❌ Failed to unregister model %s: %v", baseName, err)
-			} else {
-				log.Printf("✅ Successfully retired model: %s", baseName)
-			}
-		}
-	}
-}
-
-// fileExists checks if a file exists
-func (fsw *FileSystemWatcher) fileExists(filePath string) bool {
-	_, err := os.Stat(filePath)
-	return !os.IsNotExist(err)
-}
+// FileSystemWatcher methods removed - using simple startup-only registration
 
 // StartRegistration starts the unified registration system
 func StartRegistration(ctx context.Context, mux *http.ServeMux) error {
