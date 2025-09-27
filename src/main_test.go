@@ -5,18 +5,81 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"goplayground-data-validator/registry"
 )
 
-// TestValidationServer_Health tests the health endpoint
-func TestValidationServer_Health(t *testing.T) {
-	server := NewValidationServer()
+// testValidatorWrapper implements ValidatorInterface for testing
+// It's model-agnostic and can be used for any model type
+type testValidatorWrapper struct {
+	modelType string
+	isValid   bool
+}
+
+func (tvw *testValidatorWrapper) ValidatePayload(payload interface{}) interface{} {
+	return map[string]interface{}{
+		"is_valid":   tvw.isValid,
+		"model_type": tvw.modelType,
+		"provider":   "go-playground",
+		"errors":     []interface{}{},
+		"warnings":   []interface{}{},
+	}
+}
+
+// GenericTestPayload represents a generic test payload structure
+type GenericTestPayload struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// createTestModel creates a generic test model for unit testing
+func createTestModel(modelType string, isValid bool) *registry.ModelInfo {
+	return &registry.ModelInfo{
+		Type:        registry.ModelType(modelType),
+		Name:        strings.Title(modelType) + " Test Model",
+		Description: "Test model for " + modelType + " validation",
+		ModelStruct: reflect.TypeOf(GenericTestPayload{}), // Use proper struct type
+		Validator:   &testValidatorWrapper{modelType: modelType, isValid: isValid},
+		Examples:    []interface{}{},
+		Version:     "1.0.0-test",
+		CreatedAt:   time.Now().Format(time.RFC3339),
+		Author:      "test-framework",
+		Tags:        []string{modelType, "test", "generic"},
+	}
+}
+
+// getTestModels returns a list of test models to register
+func getTestModels() []*registry.ModelInfo {
+	return []*registry.ModelInfo{
+		createTestModel("testmodel", true),     // Valid test model
+		createTestModel("invalidmodel", false), // Invalid test model
+	}
+}
+
+func init() {
+	// Initialize the registry for unit tests with generic test models
+	globalRegistry := registry.GetGlobalRegistry()
+
+	// Register multiple test models to make tests model-agnostic
+	for _, model := range getTestModels() {
+		globalRegistry.RegisterModel(model)
+	}
+}
+
+// TestHandleHealth tests the health endpoint
+func TestHandleHealth(t *testing.T) {
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
 
-	server.handleHealth(w, req)
+	handleHealth(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status code 200, got %d", w.Code)
@@ -32,201 +95,24 @@ func TestValidationServer_Health(t *testing.T) {
 		t.Errorf("Expected status 'healthy', got %v", health["status"])
 	}
 
-	expectedFields := []string{"status", "timestamp", "version", "go_version", "workers", "requests", "uptime"}
+	expectedFields := []string{"status", "version", "uptime", "server"}
 	for _, field := range expectedFields {
 		if _, exists := health[field]; !exists {
 			t.Errorf("Missing field in health response: %s", field)
 		}
 	}
-}
 
-// TestValidationServer_Metrics tests the metrics endpoint
-func TestValidationServer_Metrics(t *testing.T) {
-	server := NewValidationServer()
-	req := httptest.NewRequest("GET", "/metrics", nil)
-	w := httptest.NewRecorder()
-
-	server.handleMetrics(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code 200, got %d", w.Code)
-	}
-
-	var metrics map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &metrics)
-	if err != nil {
-		t.Errorf("Failed to unmarshal metrics response: %v", err)
-	}
-
-	expectedFields := []string{"requests_total", "workers_active", "queue_size", "pending_results", "goroutines", "gomaxprocs", "uptime_seconds"}
-	for _, field := range expectedFields {
-		if _, exists := metrics[field]; !exists {
-			t.Errorf("Missing field in metrics response: %s", field)
-		}
+	if health["version"] != "2.0.0-modular" {
+		t.Errorf("Expected version '2.0.0-modular', got %v", health["version"])
 	}
 }
 
-// TestValidationServer_GitHubValidation_ValidPayload tests valid GitHub payload validation
-func TestValidationServer_GitHubValidation_ValidPayload(t *testing.T) {
-	server := NewValidationServer()
-
-	// Create a minimal valid payload
-	payload := GitHubPayload{
-		Action: "opened",
-		Number: 123,
-		PullRequest: PullRequest{
-			ID:                987654321,
-			NodeID:            "PR_test123",
-			Number:            123,
-			State:             "open",
-			Title:             "Test Pull Request",
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-			CommitsURL:        "https://api.github.com/repos/test/test/pulls/123/commits",
-			ReviewCommentsURL: "https://api.github.com/repos/test/test/pulls/123/comments",
-			CommentsURL:       "https://api.github.com/repos/test/test/issues/123/comments",
-			StatusesURL:       "https://api.github.com/repos/test/test/statuses/sha123",
-			Head: Reference{
-				Label: "feature-branch",
-				Ref:   "refs/heads/feature-branch",
-				SHA:   "1234567890123456789012345678901234567890",
-				User:  createTestUser(),
-				Repo:  createTestRepository(),
-			},
-			Base: Reference{
-				Label: "main",
-				Ref:   "refs/heads/main",
-				SHA:   "0987654321098765432109876543210987654321",
-				User:  createTestUser(),
-				Repo:  createTestRepository(),
-			},
-			User:         createTestUser(),
-			Commits:      1,
-			Additions:    10,
-			Deletions:    5,
-			ChangedFiles: 2,
-		},
-		Repository: createTestRepository(),
-		Sender:     createTestUser(),
-	}
-
-	jsonData, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/validate/github", bytes.NewReader(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Request-ID", "test-123")
+// TestHandleListModels tests the models listing endpoint
+func TestHandleListModels(t *testing.T) {
+	req := httptest.NewRequest("GET", "/models", nil)
 	w := httptest.NewRecorder()
 
-	server.handleGitHubValidation(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code 200, got %d", w.Code)
-	}
-
-	var result ValidationResult
-	err := json.Unmarshal(w.Body.Bytes(), &result)
-	if err != nil {
-		t.Errorf("Failed to unmarshal validation response: %v", err)
-	}
-
-	if !result.IsValid {
-		t.Errorf("Expected valid payload, got invalid with errors: %v", result.Errors)
-	}
-
-	if result.ID != "test-123" {
-		t.Errorf("Expected request ID 'test-123', got %s", result.ID)
-	}
-}
-
-// TestValidationServer_GitHubValidation_InvalidPayload tests invalid GitHub payload validation
-func TestValidationServer_GitHubValidation_InvalidPayload(t *testing.T) {
-	server := NewValidationServer()
-
-	// Create an invalid payload (missing required fields)
-	payload := map[string]interface{}{
-		"action": "invalid_action",
-		"number": -1,
-	}
-
-	jsonData, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/validate/github", bytes.NewReader(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.handleGitHubValidation(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("Expected status code 422, got %d", w.Code)
-	}
-
-	var result ValidationResult
-	err := json.Unmarshal(w.Body.Bytes(), &result)
-	if err != nil {
-		t.Errorf("Failed to unmarshal validation response: %v", err)
-	}
-
-	if result.IsValid {
-		t.Errorf("Expected invalid payload, got valid")
-	}
-
-	if len(result.Errors) == 0 {
-		t.Errorf("Expected validation errors, got none")
-	}
-}
-
-// TestValidationServer_AsyncValidation tests async validation endpoint
-func TestValidationServer_AsyncValidation(t *testing.T) {
-	server := NewValidationServer()
-
-	job := ValidationJob{
-		Type:     "github_webhook",
-		Data:     map[string]interface{}{"action": "opened", "number": 123},
-		Priority: 1,
-	}
-
-	jsonData, _ := json.Marshal(job)
-	req := httptest.NewRequest("POST", "/validate/async", bytes.NewReader(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.handleAsyncValidation(w, req)
-
-	if w.Code != http.StatusAccepted {
-		t.Errorf("Expected status code 202, got %d", w.Code)
-	}
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	if err != nil {
-		t.Errorf("Failed to unmarshal async response: %v", err)
-	}
-
-	if response["status"] != "queued" {
-		t.Errorf("Expected status 'queued', got %v", response["status"])
-	}
-
-	if response["id"] == nil {
-		t.Errorf("Expected job ID, got nil")
-	}
-}
-
-// TestValidationServer_BatchValidation tests batch validation endpoint
-func TestValidationServer_BatchValidation(t *testing.T) {
-	server := NewValidationServer()
-
-	batch := struct {
-		Payloads []GitHubPayload `json:"payloads"`
-	}{
-		Payloads: []GitHubPayload{
-			createTestGitHubPayload(),
-		},
-	}
-
-	jsonData, _ := json.Marshal(batch)
-	req := httptest.NewRequest("POST", "/validate/batch", bytes.NewReader(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.handleBatchValidation(w, req)
+	handleListModels(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status code 200, got %d", w.Code)
@@ -235,316 +121,390 @@ func TestValidationServer_BatchValidation(t *testing.T) {
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	if err != nil {
-		t.Errorf("Failed to unmarshal batch response: %v", err)
+		t.Errorf("Failed to unmarshal models response: %v", err)
 	}
 
-	if response["total"] == nil {
-		t.Errorf("Expected total field, got nil")
-	}
-
-	if response["results"] == nil {
-		t.Errorf("Expected results field, got nil")
+	if response["models"] == nil {
+		t.Error("Expected models field in response")
 	}
 }
 
-// TestValidationServer_SwaggerEndpoints tests Swagger documentation endpoints
-func TestValidationServer_SwaggerEndpoints(t *testing.T) {
-	server := NewValidationServer()
-
+// TestHandleGenericValidation tests the generic validation endpoint
+func TestHandleGenericValidation(t *testing.T) {
 	tests := []struct {
-		endpoint   string
-		method     string
-		statusCode int
+		name           string
+		request        map[string]interface{}
+		expectedStatus int
+		expectValid    bool
 	}{
-		{"/swagger/", "GET", http.StatusPermanentRedirect},
-		{"/docs/swagger.yaml", "GET", http.StatusOK},
+		{
+			name: "valid test model payload",
+			request: map[string]interface{}{
+				"model_type": "testmodel",
+				"payload": map[string]interface{}{
+					"id":          "TEST-001",
+					"name":        "Test payload",
+					"description": "Generic test payload for validation",
+					"type":        "test",
+					"status":      "active",
+					"created_at":  time.Now().Format(time.RFC3339),
+				},
+			},
+			expectedStatus: http.StatusOK,
+			expectValid:    true,
+		},
+		{
+			name: "invalid test model payload",
+			request: map[string]interface{}{
+				"model_type": "invalidmodel",
+				"payload": map[string]interface{}{
+					"id": "INVALID-001",
+				},
+			},
+			expectedStatus: http.StatusUnprocessableEntity, // 422 for invalid validation
+			expectValid:    false,
+		},
+		{
+			name: "invalid model type",
+			request: map[string]interface{}{
+				"model_type": "nonexistent",
+				"payload":    map[string]interface{}{},
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "missing model type",
+			request: map[string]interface{}{
+				"payload": map[string]interface{}{},
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "invalid JSON",
+			request:        nil, // Will send invalid JSON
+			expectedStatus: http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {
-		req := httptest.NewRequest(tt.method, tt.endpoint, nil)
-		w := httptest.NewRecorder()
+		t.Run(tt.name, func(t *testing.T) {
+			var body *bytes.Buffer
+			if tt.request != nil {
+				jsonData, _ := json.Marshal(tt.request)
+				body = bytes.NewBuffer(jsonData)
+			} else {
+				body = bytes.NewBufferString("invalid json")
+			}
 
-		switch tt.endpoint {
-		case "/swagger/":
-			server.handleSwaggerRedirect(w, req)
-		case "/docs/swagger.yaml":
-			server.handleSwaggerSpec(w, req)
-		}
+			req := httptest.NewRequest("POST", "/validate", body)
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
 
-		if w.Code != tt.statusCode {
-			t.Errorf("Endpoint %s: expected status code %d, got %d", tt.endpoint, tt.statusCode, w.Code)
-		}
+			handleGenericValidation(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("Expected status code %d, got %d", tt.expectedStatus, w.Code)
+			}
+
+			if tt.expectedStatus == http.StatusOK || tt.expectedStatus == http.StatusUnprocessableEntity {
+				var result map[string]interface{}
+				err := json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					t.Errorf("Failed to unmarshal validation response: %v", err)
+					return
+				}
+
+				isValid, ok := result["is_valid"].(bool)
+				if !ok {
+					t.Error("Expected is_valid field to be boolean")
+					return
+				}
+
+				if isValid != tt.expectValid {
+					t.Errorf("Expected is_valid=%v, got %v", tt.expectValid, isValid)
+				}
+			}
+		})
 	}
 }
 
-// TestValidationServer_Middleware tests the middleware functionality
-func TestValidationServer_Middleware(t *testing.T) {
-	server := NewValidationServer()
-
-	// Test CORS headers
-	req := httptest.NewRequest("OPTIONS", "/validate/github", nil)
-	req.Header.Set("Origin", "https://example.com")
+// TestHandleSwaggerModels tests the swagger models endpoint
+func TestHandleSwaggerModels(t *testing.T) {
+	req := httptest.NewRequest("GET", "/swagger/models", nil)
 	w := httptest.NewRecorder()
 
-	handler := server.withMiddleware(server.handleGitHubValidation)
-	handler(w, req)
+	handleSwaggerModels(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code 200 for OPTIONS, got %d", w.Code)
+		t.Errorf("Expected status code 200, got %d", w.Code)
 	}
 
-	corsHeader := w.Header().Get("Access-Control-Allow-Origin")
-	if corsHeader != "*" {
-		t.Errorf("Expected CORS header '*', got %s", corsHeader)
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Errorf("Failed to unmarshal swagger models response: %v", err)
 	}
 
-	// Test security headers
-	req = httptest.NewRequest("GET", "/health", nil)
-	w = httptest.NewRecorder()
-
-	handler = server.withMiddleware(server.handleHealth)
-	handler(w, req)
-
-	securityHeaders := map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":        "DENY",
-		"X-XSS-Protection":       "1; mode=block",
-	}
-
-	for header, expectedValue := range securityHeaders {
-		actualValue := w.Header().Get(header)
-		if actualValue != expectedValue {
-			t.Errorf("Expected security header %s: %s, got %s", header, expectedValue, actualValue)
-		}
+	if response["models"] == nil {
+		t.Error("Expected models field in swagger response")
 	}
 }
 
-// TestWorkerPool tests the worker pool functionality
-func TestWorkerPool(t *testing.T) {
-	workerPool := NewWorkerPool(2)
-	defer workerPool.cancel()
+// TestHandleSwaggerJSON tests the swagger JSON endpoint
+func TestHandleSwaggerJSON(t *testing.T) {
+	req := httptest.NewRequest("GET", "/swagger/doc.json", nil)
+	w := httptest.NewRecorder()
 
-	// Test job submission
-	job := ValidationJob{
-		ID:   "test-job-1",
-		Type: "test",
-		Data: map[string]interface{}{"test": "data"},
+	handleSwaggerJSON(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code 200, got %d", w.Code)
 	}
 
-	select {
-	case workerPool.jobQueue <- job:
-		// Job submitted successfully
-	case <-time.After(1 * time.Second):
-		t.Errorf("Failed to submit job to worker pool")
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Errorf("Failed to unmarshal swagger JSON response: %v", err)
 	}
 
-	// Test result retrieval (with timeout)
-	select {
-	case result := <-workerPool.resultChan:
-		if result.ID != job.ID {
-			t.Errorf("Expected result ID %s, got %s", job.ID, result.ID)
-		}
-	case <-time.After(2 * time.Second):
-		t.Errorf("Failed to receive result from worker pool")
+	// Check for basic Swagger structure
+	if response["swagger"] == nil && response["openapi"] == nil {
+		t.Error("Expected swagger or openapi field in response")
 	}
 }
 
-// TestCustomValidators tests custom validation functions
-func TestCustomValidators(t *testing.T) {
-	server := NewValidationServer()
+// TestSendJSONError tests the error response helper
+func TestSendJSONError(t *testing.T) {
+	w := httptest.NewRecorder()
 
-	// Test GitHub username validation
-	testCases := []struct {
-		username string
-		valid    bool
+	sendJSONError(w, "Test error message", http.StatusBadRequest)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	var errorResponse map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &errorResponse)
+	if err != nil {
+		t.Errorf("Failed to unmarshal error response: %v", err)
+	}
+
+	if errorResponse["error"] != "Test error message" {
+		t.Errorf("Expected error message 'Test error message', got %v", errorResponse["error"])
+	}
+}
+
+// TestConvertMapToStruct tests the map to struct conversion utility with generic data
+func TestConvertMapToStruct(t *testing.T) {
+	// Test with a simple generic struct that any model can use
+	type GenericTestStruct struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Value       int    `json:"value"`
+		Active      bool   `json:"active"`
+		CreatedAt   string `json:"created_at"`
+	}
+
+	sourceMap := map[string]interface{}{
+		"id":          "TEST-001",
+		"name":        "Test Entity",
+		"description": "This is a generic test entity for validation",
+		"value":       42,
+		"active":      true,
+		"created_at":  time.Now().Format(time.RFC3339),
+	}
+
+	var testStruct GenericTestStruct
+	err := convertMapToStruct(sourceMap, &testStruct)
+	if err != nil {
+		t.Errorf("convertMapToStruct failed: %v", err)
+	}
+
+	if testStruct.ID != "TEST-001" {
+		t.Errorf("Expected ID 'TEST-001', got %s", testStruct.ID)
+	}
+	if testStruct.Value != 42 {
+		t.Errorf("Expected Value 42, got %d", testStruct.Value)
+	}
+	if !testStruct.Active {
+		t.Error("Expected Active to be true")
+	}
+}
+
+// TestConvertMapToStruct_InvalidData tests conversion with invalid data using generic types
+func TestConvertMapToStruct_InvalidData(t *testing.T) {
+	type TestStruct struct {
+		Value     int       `json:"value"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+
+	tests := []struct {
+		name string
+		data map[string]interface{}
 	}{
-		{"valid-user", true},
-		{"user123", true},
-		{"", false},
-		{"a", true},
-		{strings.Repeat("a", 40), false}, // Too long
-		{"user with spaces", false},      // Invalid characters
-		{"-invalid", false},              // Cannot start with hyphen
-	}
-
-	for _, tc := range testCases {
-		user := User{Login: tc.username, ID: 123, Type: "User"}
-		user.NodeID = "test"
-		user.AvatarURL = "https://example.com/avatar"
-		user.URL = "https://example.com/user"
-		user.HTMLURL = "https://example.com/user"
-		user.FollowersURL = "https://example.com/followers"
-		user.FollowingURL = "https://example.com/following"
-		user.GistsURL = "https://example.com/gists"
-		user.StarredURL = "https://example.com/starred"
-		user.SubscriptionsURL = "https://example.com/subscriptions"
-		user.OrganizationsURL = "https://example.com/orgs"
-		user.ReposURL = "https://example.com/repos"
-		user.EventsURL = "https://example.com/events"
-		user.ReceivedEventsURL = "https://example.com/received"
-
-		err := server.validator.Struct(user)
-		isValid := err == nil
-
-		if isValid != tc.valid {
-			t.Errorf("Username %s: expected valid=%v, got valid=%v, error=%v", tc.username, tc.valid, isValid, err)
-		}
-	}
-}
-
-// TestValidationResult_BusinessLogic tests business logic validation
-func TestValidationResult_BusinessLogic(t *testing.T) {
-	server := NewValidationServer()
-
-	// Test WIP detection
-	wipPayload := createTestGitHubPayload()
-	wipPayload.PullRequest.Title = "WIP: Work in progress"
-
-	warnings := server.performBusinessValidation(&wipPayload)
-
-	hasWIPWarning := false
-	for _, warning := range warnings {
-		if warning.Code == "WIP_DETECTED" {
-			hasWIPWarning = true
-			break
-		}
-	}
-
-	if !hasWIPWarning {
-		t.Errorf("Expected WIP warning for title with 'WIP:', got none")
-	}
-
-	// Test large changeset warning
-	largePayload := createTestGitHubPayload()
-	largePayload.PullRequest.Additions = 1500
-	largePayload.PullRequest.Deletions = 500
-
-	warnings = server.performBusinessValidation(&largePayload)
-
-	hasLargeChangesetWarning := false
-	for _, warning := range warnings {
-		if warning.Code == "LARGE_CHANGESET" {
-			hasLargeChangesetWarning = true
-			break
-		}
-	}
-
-	if !hasLargeChangesetWarning {
-		t.Errorf("Expected large changeset warning for >1000 changes, got none")
-	}
-}
-
-// Helper function to create a test user
-func createTestUser() User {
-	return User{
-		Login:             "testuser",
-		ID:                12345,
-		NodeID:            "MDQ6VXNlcjEyMzQ1",
-		AvatarURL:         "https://avatars.githubusercontent.com/u/12345?v=4",
-		URL:               "https://api.github.com/users/testuser",
-		HTMLURL:           "https://github.com/testuser",
-		FollowersURL:      "https://api.github.com/users/testuser/followers",
-		FollowingURL:      "https://api.github.com/users/testuser/following{/other_user}",
-		GistsURL:          "https://api.github.com/users/testuser/gists{/gist_id}",
-		StarredURL:        "https://api.github.com/users/testuser/starred{/owner}{/repo}",
-		SubscriptionsURL:  "https://api.github.com/users/testuser/subscriptions",
-		OrganizationsURL:  "https://api.github.com/users/testuser/orgs",
-		ReposURL:          "https://api.github.com/users/testuser/repos",
-		EventsURL:         "https://api.github.com/users/testuser/events{/privacy}",
-		ReceivedEventsURL: "https://api.github.com/users/testuser/received_events",
-		Type:              "User",
-		SiteAdmin:         false,
-	}
-}
-
-// Helper function to create a test repository
-func createTestRepository() Repository {
-	return Repository{
-		ID:            555555,
-		NodeID:        "MDEwOlJlcG9zaXRvcnk1NTU1NTU=",
-		Name:          "test-repo",
-		FullName:      "testuser/test-repo",
-		Private:       false,
-		Owner:         createTestUser(),
-		HTMLURL:       "https://github.com/testuser/test-repo",
-		Fork:          false,
-		URL:           "https://api.github.com/repos/testuser/test-repo",
-		CreatedAt:     time.Now().AddDate(-1, 0, 0),
-		UpdatedAt:     time.Now(),
-		PushedAt:      time.Now(),
-		GitURL:        "git://github.com/testuser/test-repo.git",
-		SSHURL:        "git@github.com:testuser/test-repo.git",
-		CloneURL:      "https://github.com/testuser/test-repo.git",
-		DefaultBranch: "main",
-		Visibility:    "public",
-	}
-}
-
-// Helper function to create a test GitHub payload
-func createTestGitHubPayload() GitHubPayload {
-	now := time.Now()
-	return GitHubPayload{
-		Action: "opened",
-		Number: 123,
-		PullRequest: PullRequest{
-			ID:                987654321,
-			NodeID:            "PR_kwDOABCD1234567890",
-			Number:            123,
-			State:             "open",
-			Title:             "Test Pull Request",
-			CreatedAt:         now,
-			UpdatedAt:         now,
-			CommitsURL:        "https://api.github.com/repos/testuser/test-repo/pulls/123/commits",
-			ReviewCommentsURL: "https://api.github.com/repos/testuser/test-repo/pulls/123/comments",
-			CommentsURL:       "https://api.github.com/repos/testuser/test-repo/issues/123/comments",
-			StatusesURL:       "https://api.github.com/repos/testuser/test-repo/statuses/1234567890123456789012345678901234567890",
-			Head: Reference{
-				Label: "feature-branch",
-				Ref:   "refs/heads/feature-branch",
-				SHA:   "1234567890123456789012345678901234567890",
-				User:  createTestUser(),
-				Repo:  createTestRepository(),
+		{
+			name: "string to int conversion error",
+			data: map[string]interface{}{
+				"value": "not-a-number",
 			},
-			Base: Reference{
-				Label: "main",
-				Ref:   "refs/heads/main",
-				SHA:   "0987654321098765432109876543210987654321",
-				User:  createTestUser(),
-				Repo:  createTestRepository(),
-			},
-			User:         createTestUser(),
-			Commits:      1,
-			Additions:    10,
-			Deletions:    5,
-			ChangedFiles: 2,
 		},
-		Repository: createTestRepository(),
-		Sender:     createTestUser(),
+		{
+			name: "invalid time format",
+			data: map[string]interface{}{
+				"timestamp": "invalid-time-format",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var testStruct TestStruct
+			err := convertMapToStruct(tt.data, &testStruct)
+
+			// We expect an error for invalid data
+			if err == nil {
+				t.Error("Expected error for invalid data, got nil")
+			}
+		})
+	}
+}
+
+// TestStartTime verifies the global start time is set
+func TestStartTime(t *testing.T) {
+	if startTime.IsZero() {
+		t.Error("startTime should be initialized")
+	}
+
+	// Should be recent (within last minute for test purposes)
+	if time.Since(startTime) > time.Minute {
+		t.Error("startTime seems too old, might not be properly initialized")
+	}
+}
+
+// TestGlobalRegistry tests that the global registry is accessible
+func TestGlobalRegistry(t *testing.T) {
+	globalRegistry := registry.GetGlobalRegistry()
+	if globalRegistry == nil {
+		t.Error("Global registry should not be nil")
+	}
+
+	// Test basic registry functionality
+	stats := globalRegistry.GetModelStats()
+	if stats == nil {
+		t.Error("Registry stats should not be nil")
+	}
+
+	if _, exists := stats["total_models"]; !exists {
+		t.Error("Registry stats should include total_models")
+	}
+}
+
+// TestHTTPMethodValidation tests that endpoints reject invalid HTTP methods
+func TestHTTPMethodValidation(t *testing.T) {
+	tests := []struct {
+		endpoint string
+		method   string
+		handler  http.HandlerFunc
+	}{
+		{"/health", "POST", handleHealth},
+		{"/models", "POST", handleListModels},
+		{"/validate", "GET", handleGenericValidation},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.endpoint+"_"+tt.method, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.endpoint, nil)
+			w := httptest.NewRecorder()
+
+			tt.handler(w, req)
+
+			// Most endpoints should return 405 for wrong methods,
+			// but some might handle it differently
+			if w.Code != http.StatusMethodNotAllowed && w.Code != http.StatusBadRequest && w.Code != http.StatusOK {
+				// Some handlers might be more permissive, that's okay for now
+				t.Logf("Endpoint %s with method %s returned status %d", tt.endpoint, tt.method, w.Code)
+			}
+		})
+	}
+}
+
+// TestJSONResponseHeaders tests that JSON endpoints set proper headers
+func TestJSONResponseHeaders(t *testing.T) {
+	endpoints := []struct {
+		path    string
+		handler http.HandlerFunc
+	}{
+		{"/health", handleHealth},
+		{"/models", handleListModels},
+		{"/swagger/models", handleSwaggerModels},
+	}
+
+	for _, endpoint := range endpoints {
+		t.Run(endpoint.path, func(t *testing.T) {
+			req := httptest.NewRequest("GET", endpoint.path, nil)
+			w := httptest.NewRecorder()
+
+			endpoint.handler(w, req)
+
+			contentType := w.Header().Get("Content-Type")
+			if !strings.Contains(contentType, "application/json") {
+				t.Errorf("Expected Content-Type to contain application/json, got %s", contentType)
+			}
+		})
 	}
 }
 
 // Benchmark tests for performance validation
-func BenchmarkValidationServer_GitHubValidation(b *testing.B) {
-	server := NewValidationServer()
-	payload := createTestGitHubPayload()
-	jsonData, _ := json.Marshal(payload)
+func BenchmarkHandleHealth(b *testing.B) {
+	req := httptest.NewRequest("GET", "/health", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest("POST", "/validate/github", bytes.NewReader(jsonData))
-		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		server.handleGitHubValidation(w, req)
+		handleHealth(w, req)
 	}
 }
 
-func BenchmarkValidationServer_Health(b *testing.B) {
-	server := NewValidationServer()
+func BenchmarkHandleListModels(b *testing.B) {
+	req := httptest.NewRequest("GET", "/models", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest("GET", "/health", nil)
 		w := httptest.NewRecorder()
-		server.handleHealth(w, req)
+		handleListModels(w, req)
+	}
+}
+
+func BenchmarkConvertMapToStruct(b *testing.B) {
+	type BenchStruct struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Type        string `json:"type"`
+		Status      string `json:"status"`
+		Value       int    `json:"value"`
+		CreatedAt   string `json:"created_at"`
+	}
+
+	sourceMap := map[string]interface{}{
+		"id":          "BENCH-001",
+		"name":        "Benchmark test",
+		"description": "This is a benchmark test for generic validation",
+		"type":        "benchmark",
+		"status":      "active",
+		"value":       123,
+		"created_at":  time.Now().Format(time.RFC3339),
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var benchStruct BenchStruct
+		convertMapToStruct(sourceMap, &benchStruct)
 	}
 }

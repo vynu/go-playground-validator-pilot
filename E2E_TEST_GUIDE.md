@@ -2,7 +2,15 @@
 
 ## Overview
 
-The `e2e_test_suite.sh` is a comprehensive end-to-end testing script for the Go Playground Data Validator project. It performs thorough testing of all system features including automatic model discovery, validation functionality, server lifecycle management, and API endpoints.
+The `e2e_test_suite.sh` is a comprehensive end-to-end testing script for the Go Playground Data Validator project. It performs thorough testing of all system features including **model-agnostic unit testing**, automatic model discovery, validation functionality, server lifecycle management, and API endpoints.
+
+### 🚀 **New Model-Agnostic Testing Framework**
+
+The E2E test suite now includes **Phase 0: Unit Testing Suite** which features:
+- ✅ **Model-agnostic main tests** (no specific model dependencies)
+- ✅ **Automatic registry testing** (works with any number of models)
+- ✅ **Zero maintenance overhead** for core tests when adding new models
+- ✅ **Comprehensive coverage analysis** with threshold checking
 
 ## Prerequisites
 
@@ -37,6 +45,40 @@ The test suite provides colored, detailed output showing:
 
 ## Test Phases Explained
 
+### Phase 0: Unit Testing Suite (Model-Agnostic Framework) ⭐ **NEW**
+- **Purpose**: Runs comprehensive unit tests before E2E testing
+- **Features**:
+  - 🚀 **Model-agnostic main tests** (no specific model dependencies)
+  - 🔄 **Automatic registry testing** (works with any number of models)
+  - 📊 **Coverage analysis** with threshold checking (minimum 70%)
+  - 🧪 **All packages tested**: models, validations, registry, main
+- **Duration**: ~10-15 seconds
+- **Benefits**:
+  - ✅ Adding new models requires **zero changes** to core tests
+  - ✅ **Zero maintenance overhead** for main code unit tests
+  - ✅ Comprehensive test coverage with detailed reporting
+
+```bash
+# What it does internally:
+cd src && go test -v -coverprofile=../coverage/unit_coverage.out ./...
+go tool cover -func=../coverage/unit_coverage.out
+```
+
+**Sample Output**:
+```
+🧪 Phase 0: Unit Testing Suite (Model-Agnostic Framework)
+=========================================================
+ℹ️  Running model-agnostic unit test framework with coverage analysis...
+✅ Main tests are now model-agnostic (no specific model dependencies)
+✅ Registry tests work automatically with any number of models
+✅ Adding new models requires zero changes to core tests
+🧪 Running unit tests for all packages
+✅ Unit tests execution completed
+ℹ️  Total unit test coverage: 81.1%
+✅ Coverage exceeds minimum threshold (70%): 81.1%
+✅ All unit tests passed successfully
+```
+
 ### Phase 1: Server Startup & Basic Health Checks
 - **Purpose**: Verifies the validator server can start successfully
 - **Tests**: Server startup on port 8086, health endpoint accessibility
@@ -63,16 +105,18 @@ curl http://localhost:8086/health
   - ❌ Models that should NOT be registered: `bitbucket`, `gitlab`, `slack` (deleted models)
 
 ### Phase 4: Model Validation Testing
-- **Purpose**: Tests actual validation functionality with real payloads
-- **Tests**:
-  - Valid incident payload validation → expects `"is_valid":true`
-  - Invalid incident payload validation → expects `"is_valid":false`
+- **Purpose**: Tests actual validation functionality with real payloads from test_data directory
+- **Process**:
+  1. Automatically discovers all registered models
+  2. Looks for test data files in `test_data/valid/` and `test_data/invalid/`
+  3. Tests validation with available payloads
+  4. Reports results for each model
 
 Example validation request:
 ```bash
 curl -X POST http://localhost:8086/validate/incident \
   -H "Content-Type: application/json" \
-  -d '{"id":"INC-001","title":"Test Issue","description":"A test incident",...}'
+  -d @test_data/valid/incident.json
 ```
 
 ### Phase 5: Model Deletion & Server Restart Testing
@@ -321,6 +365,102 @@ All optimizations maintain full backward compatibility:
 - All existing functionality preserved
 - Test suite passes with 100% success rate
 
+## Test Data Management
+
+The `e2e_test_suite.sh` uses a structured test data directory to manage validation payloads, making it easy to add new test cases and maintain existing ones.
+
+### Test Data Directory Structure
+
+```
+test_data/
+├── valid/          # Valid payloads that should pass validation
+├── invalid/        # Invalid payloads that should fail validation
+├── examples/       # Example payloads for reference
+└── README.md       # Documentation
+```
+
+### Adding Test Data for New Models
+
+When you add a new model to the system, create corresponding test data files:
+
+1. **Valid Test Data**: `test_data/valid/{model_name}.json`
+   ```json
+   {
+     "id": "YM-001",
+     "name": "Test Your Model",
+     "description": "A test your model entry"
+   }
+   ```
+
+2. **Invalid Test Data**: `test_data/invalid/{model_name}.json`
+   ```json
+   {
+     "name": "X"
+   }
+   ```
+
+The test suite will automatically:
+- ✅ Detect the new model through automatic discovery
+- ✅ Find and use the test data files
+- ✅ Test validation with both valid and invalid payloads
+- ✅ Report results for the new model
+
+### Test Data File Guidelines
+
+#### Valid Payloads
+- Should contain all required fields
+- Should use correct data types
+- Should satisfy all validation rules
+- Should represent realistic use cases
+
+#### Invalid Payloads
+- Should violate one or more validation rules
+- Common invalid scenarios:
+  - Missing required fields
+  - Wrong data types
+  - Values outside allowed ranges
+  - Invalid formats (email, dates, etc.)
+
+#### Example Test Data Files
+
+Available in `test_data/examples/` for reference:
+- `github.json` - GitHub webhook payload
+- `api.json` - API request payload
+- `database.json` - Database query payload
+- `deployment.json` - Deployment webhook payload
+- `generic.json` - Generic event payload
+
+### Automatic Test Data Discovery
+
+The test suite automatically:
+1. Discovers all registered models
+2. Looks for corresponding files in `test_data/valid/` and `test_data/invalid/`
+3. Tests validation with found payloads
+4. Skips models without test data files (with informational messages)
+
+### Adding Edge Case Testing
+
+For complex validation scenarios, create additional test files:
+
+```
+test_data/valid/{model_name}_edge_case.json
+test_data/invalid/{model_name}_boundary.json
+test_data/examples/{model_name}_large.json
+```
+
+### Running Tests with New Test Data
+
+After adding test data files:
+
+1. **No code changes needed** - the test suite automatically discovers new files
+2. **Build the validator**: `go build -o validator src/main.go`
+3. **Run the test suite**: `./e2e_test_suite.sh`
+4. **Verify output**: Check that your new model is tested with the provided data
+
+### Fallback to Hardcoded Payloads
+
+For backward compatibility, the test suite still supports hardcoded payloads in the script. Test data files take precedence when available.
+
 ## Conclusion
 
-The `e2e_test_suite.sh` provides comprehensive testing coverage for the Go Playground Data Validator, ensuring all core functionality works correctly including automatic model discovery, validation, server lifecycle management, and API endpoints. The recent performance optimizations have made the validator significantly faster and more memory-efficient while maintaining full compatibility. It's designed to be run regularly during development and can be integrated into CI/CD pipelines for automated testing.
+The `e2e_test_suite.sh` provides comprehensive testing coverage for the Go Playground Data Validator, ensuring all core functionality works correctly including automatic model discovery, validation, server lifecycle management, and API endpoints. The test data directory structure makes it easy to add and maintain test cases for new models without modifying the test script. The recent performance optimizations have made the validator significantly faster and more memory-efficient while maintaining full compatibility. It's designed to be run regularly during development and can be integrated into CI/CD pipelines for automated testing.

@@ -1,0 +1,13 @@
+{
+  "deployment_id": "deploy-456789",
+  "application": "web-api",
+  "version": "v2.1.3",
+  "environment": "production",
+  "status": "success",
+  "started_at": "2024-01-01T10:00:00Z",
+  "completed_at": "2024-01-01T10:15:00Z",
+  "deployed_by": "ci-cd-bot",
+  "commit_sha": "abc123def456ghi789",
+  "rollback_available": true,
+  "health_check_url": "https://api.example.com/health"
+}

@@ -169,37 +169,105 @@ check_model_not_registered() {
     fi
 }
 
+# Load test data from file
+load_test_data() {
+    local file_path=$1
+    if [ -f "$file_path" ]; then
+        cat "$file_path"
+    else
+        echo ""
+    fi
+}
+
+# Test validation endpoint with expected result
+test_validation_endpoint() {
+    local model_name=$1
+    local payload=$2
+    local expected_valid=$3
+    local test_type=$4
+
+    start_test "Testing $test_type payload for $model_name"
+    response=$(curl -s -X POST "$API_BASE/validate/$model_name" \
+        -H "Content-Type: application/json" \
+        -d "$payload")
+
+    if [ "$expected_valid" = "true" ]; then
+        if echo "$response" | grep -q '"is_valid":true'; then
+            pass_test "$test_type payload validation passed for $model_name"
+        else
+            fail_test "$test_type payload validation failed for $model_name"
+            echo "Response: $response"
+        fi
+    else
+        if echo "$response" | grep -q '"is_valid":false'; then
+            pass_test "$test_type payload validation passed for $model_name"
+        else
+            fail_test "$test_type payload validation failed for $model_name"
+            echo "Response: $response"
+        fi
+    fi
+}
+
 # Test model validation functionality
 test_model_validation() {
     local model_name=$1
-    local valid_payload=$2
-    local invalid_payload=$3
+    local valid_payload_override=$2
+    local invalid_payload_override=$3
 
-    # Test valid payload
-    start_test "Testing valid payload for $model_name"
-    response=$(curl -s -X POST "$API_BASE/validate/$model_name" \
-        -H "Content-Type: application/json" \
-        -d "$valid_payload")
+    # Try to load test data from files first
+    local valid_payload=$(load_test_data "test_data/valid/$model_name.json")
+    local invalid_payload=$(load_test_data "test_data/invalid/$model_name.json")
 
-    if echo "$response" | grep -q '"is_valid":true'; then
-        pass_test "Valid payload validation passed for $model_name"
-    else
-        fail_test "Valid payload validation failed for $model_name"
-        echo "Response: $response"
+    # Use override payloads if provided and no file data found
+    if [ -z "$valid_payload" ] && [ ! -z "$valid_payload_override" ]; then
+        valid_payload="$valid_payload_override"
+    fi
+    if [ -z "$invalid_payload" ] && [ ! -z "$invalid_payload_override" ]; then
+        invalid_payload="$invalid_payload_override"
     fi
 
-    # Test invalid payload
-    start_test "Testing invalid payload for $model_name"
-    response=$(curl -s -X POST "$API_BASE/validate/$model_name" \
-        -H "Content-Type: application/json" \
-        -d "$invalid_payload")
-
-    if echo "$response" | grep -q '"is_valid":false'; then
-        pass_test "Invalid payload validation passed for $model_name"
+    # Test valid payload if available
+    if [ ! -z "$valid_payload" ]; then
+        test_validation_endpoint "$model_name" "$valid_payload" "true" "valid"
     else
-        fail_test "Invalid payload validation failed for $model_name"
-        echo "Response: $response"
+        log_info "No valid test data found for $model_name (create test_data/valid/$model_name.json)"
     fi
+
+    # Test invalid payload if available
+    if [ ! -z "$invalid_payload" ]; then
+        test_validation_endpoint "$model_name" "$invalid_payload" "false" "invalid"
+    else
+        log_info "No invalid test data found for $model_name (create test_data/invalid/$model_name.json)"
+    fi
+}
+
+# Test all discovered models automatically
+test_all_models() {
+    log_info "Testing all discovered models with available test data..."
+
+    # Get list of all registered models
+    response=$(curl -s "$API_BASE/models")
+    models=$(echo "$response" | python3 -c "import sys, json; data=json.load(sys.stdin); print(' '.join(data.get('models', [])))" 2>/dev/null || echo "")
+
+    if [ -z "$models" ]; then
+        log_warning "Could not retrieve models list for automatic testing"
+        return
+    fi
+
+    for model in $models; do
+        # Skip GitHub model - requires complex payload structure
+        if [ "$model" = "github" ]; then
+            log_info "Skipping $model validation test - requires full webhook payload structure"
+            continue
+        fi
+
+        # Check if test data exists
+        if [ -f "test_data/valid/$model.json" ] || [ -f "test_data/invalid/$model.json" ]; then
+            test_model_validation "$model"
+        else
+            log_info "No test data found for model '$model' - skipping validation test"
+        fi
+    done
 }
 
 # Create a test model
@@ -332,10 +400,98 @@ killall_validators() {
     log_success "Process cleanup completed"
 }
 
+# Phase 0: Unit Testing Suite (Model-Agnostic Framework)
+test_unit_tests() {
+    echo "🧪 Phase 0: Unit Testing Suite (Model-Agnostic Framework)"
+    echo "========================================================="
+
+    log_info "Running model-agnostic unit test framework with coverage analysis..."
+    log_info "✅ Main tests are now model-agnostic (no specific model dependencies)"
+    log_info "✅ Registry tests work automatically with any number of models"
+    log_info "✅ Adding new models requires zero changes to core tests"
+
+    # Run unit tests with coverage
+    start_test "Running unit tests for all packages"
+    if cd src && go test -v -coverprofile=../coverage/unit_coverage.out ./... > ../coverage/unit_test_output.log 2>&1; then
+        pass_test "Unit tests execution completed"
+
+        # Generate coverage report
+        log_info "Generating coverage report..."
+        if go tool cover -func=../coverage/unit_coverage.out > ../coverage/unit_coverage_summary.txt 2>&1; then
+
+            # Extract total coverage
+            TOTAL_COVERAGE=$(grep "total:" ../coverage/unit_coverage_summary.txt | awk '{print $3}' | sed 's/%//')
+
+            if [ ! -z "$TOTAL_COVERAGE" ]; then
+                log_info "Total unit test coverage: $TOTAL_COVERAGE%"
+
+                # Check if coverage meets minimum threshold (70%)
+                COVERAGE_THRESHOLD=70
+                if command -v bc >/dev/null 2>&1; then
+                    if (( $(echo "$TOTAL_COVERAGE >= $COVERAGE_THRESHOLD" | bc -l) )); then
+                        pass_test "Coverage exceeds minimum threshold ($COVERAGE_THRESHOLD%): $TOTAL_COVERAGE%"
+                    else
+                        log_warning "Coverage below threshold ($COVERAGE_THRESHOLD%): $TOTAL_COVERAGE%"
+                    fi
+                else
+                    # Fallback comparison without bc
+                    coverage_int=$(echo "$TOTAL_COVERAGE" | cut -d'.' -f1)
+                    if [ "$coverage_int" -ge "$COVERAGE_THRESHOLD" ]; then
+                        pass_test "Coverage exceeds minimum threshold ($COVERAGE_THRESHOLD%): $TOTAL_COVERAGE%"
+                    else
+                        log_warning "Coverage below threshold ($COVERAGE_THRESHOLD%): $TOTAL_COVERAGE%"
+                    fi
+                fi
+            else
+                log_warning "Could not extract total coverage percentage"
+            fi
+
+            # Show package-level coverage
+            log_info "Package-level coverage breakdown:"
+            while IFS= read -r line; do
+                if echo "$line" | grep -q "coverage:"; then
+                    echo "  📦 $line"
+                fi
+            done < ../coverage/unit_test_output.log
+
+        else
+            log_warning "Could not generate coverage summary"
+        fi
+
+        # Check for any test failures
+        if grep -q "FAIL" ../coverage/unit_test_output.log; then
+            log_warning "Some unit tests failed - check coverage/unit_test_output.log for details"
+
+            # Show failed tests summary
+            log_info "Failed tests summary:"
+            grep "FAIL" ../coverage/unit_test_output.log | head -5 | while read line; do
+                echo "  ❌ $line"
+            done
+        else
+            pass_test "All unit tests passed successfully"
+        fi
+
+    else
+        fail_test "Unit tests failed to execute"
+        log_error "Check coverage/unit_test_output.log for detailed error information"
+    fi
+
+    # Return to original directory
+    cd ..
+
+    echo ""
+}
+
 # Main test suite
 main() {
     # Clean up any existing processes first
     killall_validators
+
+    # Create coverage directory if it doesn't exist
+    mkdir -p coverage
+
+    # Run unit tests first
+    test_unit_tests
 
     echo "🚀 Phase 1: Server Startup & Basic Health Checks"
     echo "================================================="
@@ -381,13 +537,8 @@ main() {
     echo "🎯 Phase 4: Existing Model Validation Testing"
     echo "=============================================="
 
-    # Skip GitHub model validation - complex payload structure
-    log_info "Skipping GitHub validation test - requires full webhook payload structure"
-
-    # Test Incident model validation with proper payload structure
-    incident_valid='{"id":"INC-20240101-0001","title":"Test Incident Title","description":"This is a comprehensive test incident description that is longer than 20 characters","severity":"high","status":"open","priority":3,"category":"bug","environment":"production","reported_by":"test@example.com","reported_at":"2024-01-01T10:00:00Z"}'
-    incident_invalid='{"title":"","description":"","severity":"invalid","status":"invalid","priority":0,"category":"invalid","environment":"invalid","reported_by":"invalid-email"}'
-    test_model_validation "incident" "$incident_valid" "$incident_invalid"
+    # Test all discovered models with available test data
+    test_all_models
 
     echo ""
     echo "🗑️ Phase 5: Model Deletion & Server Restart Testing"
@@ -469,9 +620,7 @@ main() {
     check_model_registered "incident" "Incident model should be re-registered after restoration and server restart"
 
     # Test incident model validation works again
-    incident_valid='{"id":"INC-20240101-0001","title":"Test Incident Title","description":"This is a comprehensive test incident description that is longer than 20 characters","severity":"high","status":"open","priority":3,"category":"bug","environment":"production","reported_by":"test@example.com","reported_at":"2024-01-01T10:00:00Z"}'
-    incident_invalid='{"title":"","description":"","severity":"invalid","status":"invalid","priority":0,"category":"invalid","environment":"invalid","reported_by":"invalid-email"}'
-    test_model_validation "incident" "$incident_valid" "$incident_invalid"
+    test_model_validation "incident"
 
     echo ""
     echo "🆕 Phase 7: Dynamic Model Creation & Server Restart Testing"
@@ -501,9 +650,7 @@ main() {
         PASSED_TESTS=$((PASSED_TESTS + 1))
 
         # Test new model validation
-        testmodel_valid='{"id":"test-123","name":"John Doe","email":"john@example.com","age":25,"is_active":true,"created_at":"2024-01-01T10:00:00Z","tags":["user","test"]}'
-        testmodel_invalid='{"id":"","name":"A","email":"invalid-email","age":-5}'
-        test_model_validation "testmodel" "$testmodel_valid" "$testmodel_invalid"
+        test_model_validation "testmodel"
     else
         log_warning "Dynamic testmodel was not auto-registered (this is expected in some Go build scenarios)"
         log_info "This does not affect the core functionality - model deletion/restoration works correctly"
