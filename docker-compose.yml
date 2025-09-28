@@ -1,0 +1,106 @@
+# Simplified Docker Compose for Go Playground Validator
+# Focuses on core validation functionality with minimal services
+
+version: '3.8'
+
+services:
+  # ===========================
+  # Main Validation Server (Distroless)
+  # ===========================
+  validator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Default target is distroless (stage 2)
+    image: go-playground-validator:latest
+    container_name: validator-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - SERVER_MODE=modular
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "/validator", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - validator-network
+
+  # ===========================
+  # Alpine Version (Debugging)
+  # ===========================
+  validator-alpine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: alpine
+    image: go-playground-validator:alpine
+    container_name: validator-alpine
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      - PORT=8080
+      - SERVER_MODE=modular
+      - DEBUG=true
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - validator-network
+    profiles:
+      - debug
+      - alpine
+
+  # ===========================
+  # Development Test Runner
+  # ===========================
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: go-playground-validator:test
+    container_name: validator-tests
+    volumes:
+      - ./src:/app:ro
+      - ./test_results:/test_results
+    working_dir: /app
+    environment:
+      - CGO_ENABLED=0
+    command: >
+      sh -c "
+        echo 'Running unit tests...'
+        go test -v -coverprofile=/test_results/coverage.out ./... || exit 1
+        echo 'Generating coverage report...'
+        go tool cover -html=/test_results/coverage.out -o /test_results/coverage.html
+        echo 'Running benchmarks...'
+        go test -bench=. -benchmem ./... > /test_results/benchmarks.txt
+        echo 'Tests completed successfully!'
+      "
+    networks:
+      - validator-network
+    profiles:
+      - test
+
+# ===========================
+# Networks
+# ===========================
+networks:
+  validator-network:
+    driver: bridge
+
+# ===========================
+# Volumes (Simplified)
+# ===========================
+volumes:
+  test_results:
+    driver: local

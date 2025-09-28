@@ -1,0 +1,12 @@
+# Docker Compose Override for Development
+# This file is automatically loaded with docker-compose.yml in development
+
+services:
+  # Development overrides for the main validator
+  validator:
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=debug
+    volumes:
+      # Mount for development logs
+      - ./logs:/app/logs
