@@ -1,0 +1,7 @@
+{
+  "method": "INVALID_METHOD",
+  "url": "not-a-valid-url",
+  "timestamp": "invalid-date",
+  "retry_count": 999,
+  "source": "invalid-source"
+}

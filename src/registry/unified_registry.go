@@ -429,6 +429,129 @@ func (ur *UnifiedRegistry) ValidatePayload(modelType ModelType, payload interfac
 	return validator.ValidatePayload(payload), nil
 }
 
+// ValidateArray validates an array of records and returns structured results
+func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[string]interface{}) (*models.ArrayValidationResult, error) {
+	// Generate batch_id for tracking
+	batchID := models.GenerateBatchID("auto")
+	startTime := time.Now()
+
+	results := make([]models.RowValidationResult, len(records))
+	validCount := 0
+	invalidCount := 0
+
+	// Get model info for struct creation
+	modelInfo, err := ur.GetModel(modelType)
+	if err != nil {
+		return nil, fmt.Errorf("model type not found: %w", err)
+	}
+
+	// Sequential validation (can be optimized later with worker pool)
+	for i, record := range records {
+		rowResult := ur.validateSingleRow(modelType, modelInfo, record, i)
+		results[i] = rowResult
+
+		if rowResult.IsValid {
+			validCount++
+		} else {
+			invalidCount++
+		}
+	}
+
+	arrayResult := &models.ArrayValidationResult{
+		BatchID:        batchID,
+		Status:         "completed",
+		TotalRecords:   len(records),
+		ValidRecords:   validCount,
+		InvalidRecords: invalidCount,
+		ProcessingTime: time.Since(startTime).Milliseconds(),
+		CompletedAt:    time.Now(),
+		Results:        results,
+		Summary:        models.BuildSummary(results),
+	}
+
+	return arrayResult, nil
+}
+
+// validateSingleRow validates a single row from an array
+func (ur *UnifiedRegistry) validateSingleRow(modelType ModelType, modelInfo *ModelInfo, record map[string]interface{}, rowIndex int) models.RowValidationResult {
+	rowStartTime := time.Now()
+	recordID := models.DetectRecordIdentifier(record, rowIndex)
+
+	// Helper to create error result
+	createErrorResult := func(code, message string) models.RowValidationResult {
+		return models.RowValidationResult{
+			RowIndex:         rowIndex,
+			RecordIdentifier: recordID,
+			IsValid:          false,
+			ValidationTime:   time.Since(rowStartTime).Milliseconds(),
+			Errors: []models.ValidationError{{
+				Field:   "record",
+				Message: message,
+				Code:    code,
+			}},
+			Warnings: []models.ValidationWarning{},
+		}
+	}
+
+	// Create and populate model instance
+	modelInstance := reflect.New(modelInfo.ModelStruct).Interface()
+
+	jsonBytes, err := json.Marshal(record)
+	if err != nil {
+		return createErrorResult("JSON_MARSHAL_ERROR", fmt.Sprintf("Failed to marshal record: %v", err))
+	}
+
+	if err := json.Unmarshal(jsonBytes, modelInstance); err != nil {
+		return createErrorResult("JSON_UNMARSHAL_ERROR", fmt.Sprintf("Failed to unmarshal record: %v", err))
+	}
+
+	// Validate using existing validator
+	modelValue := reflect.ValueOf(modelInstance).Elem().Interface()
+	result, err := ur.ValidatePayload(modelType, modelValue)
+	if err != nil {
+		return createErrorResult("VALIDATION_ERROR", fmt.Sprintf("Validation failed: %v", err))
+	}
+
+	// Convert validation result to row result
+	rowResult := models.RowValidationResult{
+		RowIndex:         rowIndex,
+		RecordIdentifier: recordID,
+		ValidationTime:   time.Since(rowStartTime).Milliseconds(),
+		Errors:           []models.ValidationError{},
+		Warnings:         []models.ValidationWarning{},
+	}
+
+	// Extract validation result fields
+	if validationResult, ok := result.(models.ValidationResult); ok {
+		rowResult.IsValid = validationResult.IsValid
+		rowResult.Errors = validationResult.Errors
+		rowResult.Warnings = validationResult.Warnings
+	} else if resultMap, ok := result.(map[string]interface{}); ok {
+		// Handle map-based validation result
+		if isValid, exists := resultMap["is_valid"]; exists {
+			if valid, ok := isValid.(bool); ok {
+				rowResult.IsValid = valid
+			}
+		}
+
+		// Extract errors
+		if errors, exists := resultMap["errors"]; exists {
+			if errSlice, ok := errors.([]models.ValidationError); ok {
+				rowResult.Errors = errSlice
+			}
+		}
+
+		// Extract warnings
+		if warnings, exists := resultMap["warnings"]; exists {
+			if warnSlice, ok := warnings.([]models.ValidationWarning); ok {
+				rowResult.Warnings = warnSlice
+			}
+		}
+	}
+
+	return rowResult
+}
+
 // CreateModelInstance creates new instance of model struct
 func (ur *UnifiedRegistry) CreateModelInstance(modelType ModelType) (interface{}, error) {
 	model, err := ur.GetModel(modelType)

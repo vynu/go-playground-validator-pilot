@@ -10,9 +10,24 @@ echo "========================================"
 echo ""
 
 # Configuration
-SERVER_PORT=8086
-API_BASE="http://localhost:$SERVER_PORT"
-SERVER_PID=""
+# Check if running in Docker mode (for Makefile docker-test-* targets)
+if [ ! -z "$TEST_MODE" ] && [ "$TEST_MODE" = "docker" ]; then
+    echo "🐳 Running in Docker test mode"
+    DOCKER_MODE=true
+    # Use environment variable for URL if set, otherwise use default
+    SERVER_PORT=${VALIDATOR_URL##*:}
+    API_BASE="${VALIDATOR_URL:-http://localhost:8087}"
+    SERVER_PID=""
+    SKIP_SERVER_START=true
+else
+    echo "💻 Running in local test mode"
+    DOCKER_MODE=false
+    SERVER_PORT=8086
+    API_BASE="http://localhost:$SERVER_PORT"
+    SERVER_PID=""
+    SKIP_SERVER_START=false
+fi
+
 INCIDENT_MODEL_BACKUP=""
 INCIDENT_VALIDATION_BACKUP=""
 
@@ -484,23 +499,33 @@ test_unit_tests() {
 
 # Main test suite
 main() {
-    # Clean up any existing processes first
-    killall_validators
+    # Skip phases not applicable in Docker mode
+    if [ "$DOCKER_MODE" = false ]; then
+        # Clean up any existing processes first
+        killall_validators
 
-    # Create coverage directory if it doesn't exist
-    mkdir -p coverage
+        # Create coverage directory if it doesn't exist
+        mkdir -p coverage
 
-    # Run unit tests first
-    test_unit_tests
+        # Run unit tests first
+        test_unit_tests
 
-    echo "🚀 Phase 1: Server Startup & Basic Health Checks"
-    echo "================================================="
+        echo "🚀 Phase 1: Server Startup & Basic Health Checks"
+        echo "================================================="
 
-    # Start server
-    log_info "Starting server on port $SERVER_PORT..."
-    PORT=$SERVER_PORT ./validator &
-    SERVER_PID=$!
-    wait_for_server
+        # Start server
+        log_info "Starting server on port $SERVER_PORT..."
+        PORT=$SERVER_PORT ./bin/validator &
+        SERVER_PID=$!
+        wait_for_server
+    else
+        # Docker mode - server is already running
+        log_info "Skipping unit tests and server startup (Docker mode)"
+        log_info "Using existing server at $API_BASE"
+
+        # Just verify the server is available
+        wait_for_server
+    fi
 
     echo ""
     echo "🔍 Phase 2: Basic Endpoint Testing"
@@ -540,11 +565,13 @@ main() {
     # Test all discovered models with available test data
     test_all_models
 
-    echo ""
-    echo "🗑️ Phase 5: Model Deletion & Server Restart Testing"
-    echo "=================================================="
+    # Skip filesystem-based tests in Docker mode
+    if [ "$DOCKER_MODE" = false ]; then
+        echo ""
+        echo "🗑️ Phase 5: Model Deletion & Server Restart Testing"
+        echo "=================================================="
 
-    # Test model deletion with server restart (since no file watchers)
+        # Test model deletion with server restart (since no file watchers)
     log_info "Testing model deletion with server restart..."
 
     # Backup incident model files
@@ -574,7 +601,7 @@ main() {
 
     # Start server again to test model deletion
     log_info "Starting server again to test model deletion..."
-    PORT=$SERVER_PORT ./validator &
+    PORT=$SERVER_PORT ./bin/validator &
     SERVER_PID=$!
     wait_for_server
 
@@ -612,7 +639,7 @@ main() {
 
     # Start server again to test model restoration
     log_info "Starting server again to test model restoration..."
-    PORT=$SERVER_PORT ./validator &
+    PORT=$SERVER_PORT ./bin/validator &
     SERVER_PID=$!
     wait_for_server
 
@@ -638,7 +665,7 @@ main() {
 
     # Start server again to test new model registration
     log_info "Starting server again to test new model registration..."
-    PORT=$SERVER_PORT ./validator &
+    PORT=$SERVER_PORT ./bin/validator &
     SERVER_PID=$!
     wait_for_server
 
@@ -660,6 +687,8 @@ main() {
     # Clean up test model
     log_info "Cleaning up test model..."
     rm -f src/models/testmodel.go src/validations/testmodel.go
+
+    fi  # End of Docker mode check - skip phases 5-7 in Docker mode
 
     echo ""
     echo "📊 Phase 8: API Response Format Testing"
@@ -686,8 +715,198 @@ main() {
     fi
 
     echo ""
-    echo "🌐 Phase 9: HTTP Method Testing"
-    echo "==============================="
+    echo "📊 Phase 9: Array Validation Testing"
+    echo "===================================="
+
+    # Test array validation with multiple valid records
+    start_test "Array validation with 2 valid incident records"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "data": [
+          {
+            "id": "INC-001",
+            "title": "Array Test 1",
+            "description": "Testing array validation with first record",
+            "priority": 1,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "alice@example.com",
+            "assigned_to": "bob@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          },
+          {
+            "id": "INC-002",
+            "title": "Array Test 2",
+            "description": "Testing array validation with second record",
+            "priority": 2,
+            "severity": "high",
+            "status": "open",
+            "category": "bug",
+            "environment": "production",
+            "reported_by": "bob@example.com",
+            "assigned_to": "alice@example.com",
+            "created_at": "2024-01-15T11:00:00Z",
+            "reported_at": "2024-01-15T11:00:00Z"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"batch_id"' && \
+       echo "$response" | grep -q '"status":"completed"' && \
+       echo "$response" | grep -q '"total_records":2' && \
+       echo "$response" | grep -q '"valid_records":2'; then
+        pass_test "Array validation with valid records works correctly"
+    else
+        fail_test "Array validation did not return expected structure"
+        echo "Response: $response"
+    fi
+
+    # Test array validation with mixed valid/invalid records
+    start_test "Array validation with mixed valid/invalid records"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "data": [
+          {
+            "id": "INC-003",
+            "title": "Valid Record",
+            "description": "This is a valid incident record for testing",
+            "priority": 1,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "alice@example.com",
+            "assigned_to": "bob@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          },
+          {
+            "id": "INVALID",
+            "title": "",
+            "description": "Short",
+            "priority": 999,
+            "severity": "invalid",
+            "status": "unknown"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"total_records":2' && \
+       echo "$response" | grep -q '"valid_records":1' && \
+       echo "$response" | grep -q '"invalid_records":1'; then
+        pass_test "Array validation correctly identifies mixed valid/invalid records"
+    else
+        fail_test "Array validation did not correctly process mixed records"
+        echo "Response: $response"
+    fi
+
+    # Test array validation returns proper summary
+    start_test "Array validation returns summary statistics"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "data": [
+          {
+            "id": "INC-004",
+            "title": "Summary Test",
+            "description": "Testing that summary statistics are returned correctly",
+            "priority": 1,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "test@example.com",
+            "assigned_to": "admin@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"summary"' && \
+       echo "$response" | grep -q '"success_rate"' && \
+       echo "$response" | grep -q '"total_records_processed"'; then
+        pass_test "Array validation returns proper summary statistics"
+    else
+        fail_test "Array validation summary is missing or incomplete"
+        echo "Response: $response"
+    fi
+
+    # Test array validation includes row-level results
+    start_test "Array validation includes row-level validation results"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "data": [
+          {
+            "id": "INC-005",
+            "title": "Row Test",
+            "description": "Testing row-level validation results",
+            "priority": 1,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "test@example.com",
+            "assigned_to": "admin@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"results"' && \
+       echo "$response" | grep -q '"row_index"' && \
+       echo "$response" | grep -q '"record_identifier"' && \
+       echo "$response" | grep -q '"is_valid"'; then
+        pass_test "Array validation includes row-level results"
+    else
+        fail_test "Array validation row-level results are missing"
+        echo "Response: $response"
+    fi
+
+    # Test backward compatibility with single object validation
+    start_test "Single object validation still works (backward compatibility)"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "payload": {
+          "id": "INC-006",
+          "title": "Backward Compatibility Test",
+          "description": "Testing that single object validation still works",
+          "priority": 1,
+          "severity": "critical",
+          "status": "open",
+          "category": "feature",
+          "environment": "production",
+          "reported_by": "test@example.com",
+          "assigned_to": "admin@example.com",
+          "created_at": "2024-01-15T10:00:00Z",
+          "reported_at": "2024-01-15T10:00:00Z"
+        }
+      }')
+
+    if echo "$response" | grep -q '"is_valid"' && \
+       ! echo "$response" | grep -q '"batch_id"'; then
+        pass_test "Single object validation maintains backward compatibility"
+    else
+        fail_test "Single object validation format changed unexpectedly"
+        echo "Response: $response"
+    fi
+
+    echo ""
+    echo "🌐 Phase 10: HTTP Method Testing"
+    echo "================================"
 
     # Test wrong HTTP methods return appropriate errors
     test_endpoint "POST to health endpoint should return method not allowed" "$API_BASE/health" "405" "POST"

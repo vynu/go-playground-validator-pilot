@@ -118,10 +118,12 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 // All platform-specific validation is now handled dynamically via registry.RegisterHTTPEndpoints()
 
 // handleGenericValidation handles validation with explicit model type using automatic discovery
+// Supports both single object validation (payload) and array validation (data)
 func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		ModelType string                 `json:"model_type"`
-		Payload   map[string]interface{} `json:"payload"`
+		ModelType string                   `json:"model_type"`
+		Payload   map[string]interface{}   `json:"payload"`        // Single object validation
+		Data      []map[string]interface{} `json:"data,omitempty"` // Array validation
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -138,6 +140,27 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// NEW: Detect array vs single object validation
+	if len(request.Data) > 0 {
+		// Array validation path
+		result, err := globalRegistry.ValidateArray(modelType, request.Data)
+		if err != nil {
+			sendJSONError(w, "Array validation failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Set appropriate status code based on validation results
+		if result.InvalidRecords > 0 {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+		}
+
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	// Existing single object validation
 	// Create an instance of the model struct
 	modelInstance, err := globalRegistry.CreateModelInstance(modelType)
 	if err != nil {

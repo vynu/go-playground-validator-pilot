@@ -1,0 +1,50 @@
+{
+  "model_type": "incident",
+  "data": [
+    {
+      "id": "INC-20241002-0001",
+      "title": "Production Database Connection Pool Exhaustion",
+      "description": "The production database connection pool has been exhausted causing service degradation and timeout errors for end users",
+      "severity": "critical",
+      "status": "open",
+      "priority": 5,
+      "category": "performance",
+      "environment": "production",
+      "reported_by": "monitoring@example.com",
+      "assigned_to": "dba-team@example.com",
+      "reported_at": "2024-10-02T10:00:00Z",
+      "tags": ["database", "performance", "critical"],
+      "impact": "critical"
+    },
+    {
+      "id": "INC-20241002-0002",
+      "title": "Authentication Service High Latency Issue",
+      "description": "The authentication service is experiencing high latency over 2 seconds affecting user login experience across all platforms",
+      "severity": "high",
+      "status": "investigating",
+      "priority": 4,
+      "category": "performance",
+      "environment": "production",
+      "reported_by": "ops-team@example.com",
+      "assigned_to": "backend-team@example.com",
+      "reported_at": "2024-10-02T10:15:00Z",
+      "tags": ["auth", "latency", "performance"],
+      "impact": "high"
+    },
+    {
+      "id": "INC-20241002-0003",
+      "title": "Cache Invalidation Bug in Product Catalog",
+      "description": "Product catalog cache is not invalidating properly after updates causing stale data to be displayed to customers",
+      "severity": "medium",
+      "status": "open",
+      "priority": 3,
+      "category": "bug",
+      "environment": "production",
+      "reported_by": "qa-team@example.com",
+      "assigned_to": "frontend-team@example.com",
+      "reported_at": "2024-10-02T10:30:00Z",
+      "tags": ["cache", "product-catalog"],
+      "impact": "medium"
+    }
+  ]
+}

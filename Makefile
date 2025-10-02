@@ -391,6 +391,47 @@ docker-test-build: ## Test Docker build process only
 	docker build --target builder -t $(DOCKER_IMAGE):test-build .
 	@echo "$(GREEN)✓ Docker build test completed$(RESET)"
 
+.PHONY: docker-test-e2e
+docker-test-e2e: docker-build ## Run E2E tests against Docker container
+	@echo "$(BLUE)Running E2E tests against Docker container...$(RESET)"
+	@echo "$(BLUE)Starting container on port 8087...$(RESET)"
+	@$(MAKE) kill-port PORT=8087 2>/dev/null || true
+	@docker run -d --name validator-e2e-test -p 8087:8080 $(DOCKER_IMAGE):$(DOCKER_TAG)
+	@echo "$(BLUE)Waiting for container to be ready...$(RESET)"
+	@sleep 5
+	@echo "$(BLUE)Running E2E tests...$(RESET)"
+	@VALIDATOR_URL=http://localhost:8087 TEST_MODE=docker ./e2e_test_suite.sh || (docker stop validator-e2e-test && docker rm validator-e2e-test && exit 1)
+	@echo "$(BLUE)Cleaning up test container...$(RESET)"
+	@docker stop validator-e2e-test
+	@docker rm validator-e2e-test
+	@echo "$(GREEN)✓ Docker E2E tests completed$(RESET)"
+
+.PHONY: docker-test-e2e-alpine
+docker-test-e2e-alpine: docker-build-alpine ## Run E2E tests against Alpine Docker container
+	@echo "$(BLUE)Running E2E tests against Alpine Docker container...$(RESET)"
+	@echo "$(BLUE)Starting Alpine container on port 8087...$(RESET)"
+	@$(MAKE) kill-port PORT=8087 2>/dev/null || true
+	@docker run -d --name validator-e2e-test-alpine -p 8087:8080 $(DOCKER_IMAGE):alpine
+	@echo "$(BLUE)Waiting for container to be ready...$(RESET)"
+	@sleep 5
+	@echo "$(BLUE)Running E2E tests...$(RESET)"
+	@VALIDATOR_URL=http://localhost:8087 TEST_MODE=docker ./e2e_test_suite.sh || (docker stop validator-e2e-test-alpine && docker rm validator-e2e-test-alpine && exit 1)
+	@echo "$(BLUE)Cleaning up test container...$(RESET)"
+	@docker stop validator-e2e-test-alpine
+	@docker rm validator-e2e-test-alpine
+	@echo "$(GREEN)✓ Docker E2E tests (Alpine) completed$(RESET)"
+
+.PHONY: docker-test-compose
+docker-test-compose: ## Run E2E tests using docker-compose
+	@echo "$(BLUE)Running E2E tests using docker-compose...$(RESET)"
+	@docker-compose up -d validator
+	@echo "$(BLUE)Waiting for service to be ready...$(RESET)"
+	@sleep 5
+	@echo "$(BLUE)Running E2E tests...$(RESET)"
+	@VALIDATOR_URL=http://localhost:8080 TEST_MODE=docker ./e2e_test_suite.sh || (docker-compose down && exit 1)
+	@docker-compose down
+	@echo "$(GREEN)✓ Docker compose E2E tests completed$(RESET)"
+
 .PHONY: docker-benchmark
 docker-benchmark: ## Run benchmarks in Docker
 	@echo "$(BLUE)Running benchmarks in Docker...$(RESET)"

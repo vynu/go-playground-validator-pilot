@@ -1,0 +1,14 @@
+{
+  "operation": "INVALID_OP",
+  "table": "",
+  "database": "",
+  "query": "",
+  "timestamp": "invalid",
+  "connection_info": {
+    "host": "",
+    "port": 99999,
+    "database": "",
+    "username": "",
+    "driver": "invalid_driver"
+  }
+}

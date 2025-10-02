@@ -1,0 +1,12 @@
+{
+  "id": "X",
+  "title": "Short",
+  "description": "Too short",
+  "severity": "invalid-severity",
+  "status": "unknown-status",
+  "priority": 999,
+  "category": "invalid-category",
+  "environment": "invalid-env",
+  "reported_by": "x",
+  "reported_at": "invalid-date"
+}

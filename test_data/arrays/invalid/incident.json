@@ -1,0 +1,29 @@
+{
+  "model_type": "incident",
+  "data": [
+    {
+      "id": "INVALID-ID",
+      "title": "Short",
+      "description": "Too short desc",
+      "severity": "invalid-severity",
+      "status": "unknown",
+      "priority": 999,
+      "category": "invalid-category",
+      "environment": "invalid-env",
+      "reported_by": "x",
+      "reported_at": "invalid-date"
+    },
+    {
+      "id": "INC-20241002-0001",
+      "title": "",
+      "description": "Missing title field validation test should fail",
+      "severity": "critical",
+      "status": "open",
+      "priority": 1,
+      "category": "bug",
+      "environment": "production",
+      "reported_by": "test@example.com",
+      "reported_at": "2024-10-02T10:00:00Z"
+    }
+  ]
+}

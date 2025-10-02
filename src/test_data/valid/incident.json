@@ -1,0 +1,16 @@
+{
+  "id": "INC-20241002-0001",
+  "title": "Production Database Connection Timeout Issue",
+  "description": "Multiple database connection timeout errors occurring in production environment affecting user authentication service",
+  "severity": "critical",
+  "status": "open",
+  "priority": 5,
+  "category": "performance",
+  "environment": "production",
+  "reported_by": "ops-team@example.com",
+  "assigned_to": "database-admin@example.com",
+  "reported_at": "2024-10-02T10:00:00Z",
+  "updated_at": "2024-10-02T10:05:00Z",
+  "tags": ["database", "timeout", "authentication"],
+  "impact": "critical"
+}
