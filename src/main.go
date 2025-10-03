@@ -120,6 +120,9 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleGenericValidation handles validation with explicit model type using automatic discovery
 // Supports both single object validation (payload) and array validation (data)
 func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
+	// Ensure request body is closed and cleaned up
+	defer r.Body.Close()
+
 	var request struct {
 		ModelType string                   `json:"model_type"`
 		Payload   map[string]interface{}   `json:"payload"`        // Single object validation
@@ -202,28 +205,8 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 func handleListModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Try dynamic registry first
-	dynamicRegistry := registry.GetGlobalDynamicRegistry()
-	if dynamicRegistry != nil {
-		modelsWithDetails := dynamicRegistry.GetRegisteredModelsWithDetails()
-		json.NewEncoder(w).Encode(modelsWithDetails)
-		return
-	}
-
-	// Fallback to standard registry
-	standardRegistry := registry.GetGlobalRegistry()
-	allModels := standardRegistry.GetAllModels()
-
-	modelList := make([]string, 0, len(allModels))
-	for modelType := range allModels {
-		modelList = append(modelList, string(modelType))
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"models": modelList,
-		"count":  len(modelList),
-		"source": "standard_registry",
-	})
+	modelsWithDetails := registry.GetGlobalRegistry().GetRegisteredModelsWithDetails()
+	json.NewEncoder(w).Encode(modelsWithDetails)
 }
 
 // sendJSONError sends a standardized JSON error response
@@ -488,65 +471,20 @@ func handleSwaggerJSON(w http.ResponseWriter, r *http.Request) {
 func handleSwaggerModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Try dynamic registry first
-	dynamicRegistry := registry.GetGlobalDynamicRegistry()
-	if dynamicRegistry != nil {
-		modelsWithDetails := dynamicRegistry.GetRegisteredModelsWithDetails()
-		json.NewEncoder(w).Encode(modelsWithDetails)
-		return
-	}
-
-	// Fallback to standard registry
-	models := registry.GetGlobalRegistry().GetAllModels()
-
-	// Create dynamic schemas for each model
-	dynamicSchemas := make(map[string]interface{})
-	for modelType, modelInfo := range models {
-		dynamicSchemas[string(modelType)] = map[string]interface{}{
-			"type":        "object",
-			"description": modelInfo.Description,
-			"version":     modelInfo.Version,
-			"author":      modelInfo.Author,
-			"tags":        modelInfo.Tags,
-			"examples":    modelInfo.Examples,
-			"created_at":  modelInfo.CreatedAt,
-			"endpoint":    "/validate/" + string(modelType),
-		}
-	}
-
-	response := map[string]interface{}{
-		"models":      dynamicSchemas,
-		"count":       len(dynamicSchemas),
-		"last_update": time.Now().Format(time.RFC3339),
-		"source":      "standard_registry",
-	}
-
-	json.NewEncoder(w).Encode(response)
+	modelsWithDetails := registry.GetGlobalRegistry().GetRegisteredModelsWithDetails()
+	json.NewEncoder(w).Encode(modelsWithDetails)
 }
 
 // getSwaggerSpec returns the Swagger specification as a Go map
 func getSwaggerSpec() map[string]interface{} {
-	// Get dynamic model list
-	var modelList []string
-
-	// Try dynamic registry first
-	dynamicRegistry := registry.GetGlobalDynamicRegistry()
-	if dynamicRegistry != nil {
-		allModels := dynamicRegistry.GetAllModels()
-		modelList = make([]string, 0, len(allModels))
-		for modelType := range allModels {
-			modelList = append(modelList, string(modelType))
-		}
-	} else {
-		// Fallback to standard registry
-		models := registry.GetGlobalRegistry().ListModels()
-		modelList = make([]string, len(models))
-		for i, model := range models {
-			modelList[i] = string(model)
-		}
+	// Get model list from registry
+	models := registry.GetGlobalRegistry().ListModels()
+	modelList := make([]string, len(models))
+	for i, model := range models {
+		modelList[i] = string(model)
 	}
 
-	// Basic Swagger spec structure that will be populated from swagger.yaml
+	// Basic Swagger spec structure
 	return map[string]interface{}{
 		"openapi": "3.0.3",
 		"info": map[string]interface{}{

@@ -80,6 +80,7 @@ func TestBuildSummary(t *testing.T) {
 			RowIndex:         0,
 			RecordIdentifier: "rec-1",
 			IsValid:          true,
+			TestName:         "UserValidator",
 			Errors:           []ValidationError{},
 			Warnings:         []ValidationWarning{},
 		},
@@ -87,6 +88,7 @@ func TestBuildSummary(t *testing.T) {
 			RowIndex:         1,
 			RecordIdentifier: "rec-2",
 			IsValid:          false,
+			TestName:         "UserValidator",
 			Errors: []ValidationError{
 				{Field: "name", Message: "required", Code: "REQ"},
 				{Field: "email", Message: "invalid", Code: "INV"},
@@ -99,6 +101,7 @@ func TestBuildSummary(t *testing.T) {
 			RowIndex:         2,
 			RecordIdentifier: "rec-3",
 			IsValid:          true,
+			TestName:         "UserValidator",
 			Errors:           []ValidationError{},
 			Warnings:         []ValidationWarning{},
 		},
@@ -127,9 +130,25 @@ func TestBuildSummary(t *testing.T) {
 		t.Errorf("Expected ValidationWarnings = 1, got %d", summary.ValidationWarnings)
 	}
 
-	// Test total tests ran
-	if summary.TotalTestsRan != 3 {
-		t.Errorf("Expected TotalTestsRan = 3, got %d", summary.TotalTestsRan)
+	// Test total tests ran (unique tests: 1 successful + 1 failed = 1 unique test "UserValidator")
+	if summary.TotalTestsRan != 1 {
+		t.Errorf("Expected TotalTestsRan = 1 (unique tests), got %d", summary.TotalTestsRan)
+	}
+
+	// Test successful test names (should have exactly 1 unique test name)
+	if len(summary.SuccessfulTestNames) != 1 {
+		t.Errorf("Expected 1 unique successful test name, got %d", len(summary.SuccessfulTestNames))
+	}
+	if len(summary.SuccessfulTestNames) > 0 && summary.SuccessfulTestNames[0] != "UserValidator" {
+		t.Errorf("Expected successful test name 'UserValidator', got '%s'", summary.SuccessfulTestNames[0])
+	}
+
+	// Test failed test names (should have exactly 1 unique test name)
+	if len(summary.FailedTestNames) != 1 {
+		t.Errorf("Expected 1 unique failed test name, got %d", len(summary.FailedTestNames))
+	}
+	if len(summary.FailedTestNames) > 0 && summary.FailedTestNames[0] != "UserValidator" {
+		t.Errorf("Expected failed test name 'UserValidator', got '%s'", summary.FailedTestNames[0])
 	}
 }
 

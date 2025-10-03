@@ -477,6 +477,9 @@ func (ur *UnifiedRegistry) validateSingleRow(modelType ModelType, modelInfo *Mod
 	rowStartTime := time.Now()
 	recordID := models.DetectRecordIdentifier(record, rowIndex)
 
+	// Generate test name from model type (e.g., "incident" -> "IncidentValidator")
+	testName := fmt.Sprintf("%sValidator", toTitleCase(string(modelType)))
+
 	// Helper to create error result
 	createErrorResult := func(code, message string) models.RowValidationResult {
 		return models.RowValidationResult{
@@ -484,6 +487,7 @@ func (ur *UnifiedRegistry) validateSingleRow(modelType ModelType, modelInfo *Mod
 			RecordIdentifier: recordID,
 			IsValid:          false,
 			ValidationTime:   time.Since(rowStartTime).Milliseconds(),
+			TestName:         testName,
 			Errors: []models.ValidationError{{
 				Field:   "record",
 				Message: message,
@@ -517,6 +521,7 @@ func (ur *UnifiedRegistry) validateSingleRow(modelType ModelType, modelInfo *Mod
 		RowIndex:         rowIndex,
 		RecordIdentifier: recordID,
 		ValidationTime:   time.Since(rowStartTime).Milliseconds(),
+		TestName:         testName,
 		Errors:           []models.ValidationError{},
 		Warnings:         []models.ValidationWarning{},
 	}
@@ -547,6 +552,17 @@ func (ur *UnifiedRegistry) validateSingleRow(modelType ModelType, modelInfo *Mod
 				rowResult.Warnings = warnSlice
 			}
 		}
+	}
+
+	// Add sub-test categorization based on error/warning codes
+	if !rowResult.IsValid && len(rowResult.Errors) > 0 {
+		// Determine sub-test from primary error code
+		primaryErrorCode := rowResult.Errors[0].Code
+		rowResult.TestName = fmt.Sprintf("%s:%s", testName, primaryErrorCode)
+	} else if len(rowResult.Warnings) > 0 {
+		// If valid but has warnings, categorize by warning code
+		primaryWarningCode := rowResult.Warnings[0].Code
+		rowResult.TestName = fmt.Sprintf("%s:%s", testName, primaryWarningCode)
 	}
 
 	return rowResult
@@ -591,6 +607,9 @@ func (ur *UnifiedRegistry) registerAllHTTPEndpoints() {
 // createDynamicHandler creates HTTP handler for a specific model
 func (ur *UnifiedRegistry) createDynamicHandler(modelType ModelType, modelInfo *ModelInfo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Ensure request body is closed and cleaned up
+		defer r.Body.Close()
+
 		w.Header().Set("Content-Type", "application/json")
 
 		// Create model instance

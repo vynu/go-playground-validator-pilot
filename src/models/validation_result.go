@@ -27,6 +27,7 @@ type RowValidationResult struct {
 	RecordIdentifier string              `json:"record_identifier"`  // Auto-detected ID
 	IsValid          bool                `json:"is_valid"`           // Whether the row is valid
 	ValidationTime   int64               `json:"validation_time_ms"` // Validation time in milliseconds
+	TestName         string              `json:"test_name"`          // Name of the validation test applied (e.g., "IncidentValidator:IDFormat")
 	Errors           []ValidationError   `json:"errors,omitempty"`   // Validation errors
 	Warnings         []ValidationWarning `json:"warnings,omitempty"` // Validation warnings
 }
@@ -69,33 +70,64 @@ func DetectRecordIdentifier(record map[string]interface{}, rowIndex int) string 
 
 // BuildSummary builds a ValidationSummary from an array of RowValidationResults
 func BuildSummary(results []RowValidationResult) ValidationSummary {
+	// Pre-allocate slices with estimated capacity to avoid repeated allocations
+	totalRecords := len(results)
 	summary := ValidationSummary{
-		TotalRecordsProcessed: len(results),
-		SuccessfulTestNames:   []string{},
-		FailedTestNames:       []string{},
+		TotalRecordsProcessed: totalRecords,
+		SuccessfulTestNames:   make([]string, 0, totalRecords),
+		FailedTestNames:       make([]string, 0, totalRecords),
 	}
 
 	validCount := 0
 	totalErrors := 0
 	totalWarnings := 0
 
+	// Use maps to track unique test names
+	successfulTests := make(map[string]bool)
+	failedTests := make(map[string]bool)
+
 	for _, result := range results {
 		if result.IsValid {
 			validCount++
+			// Add to successful test names set if test name is provided
+			if result.TestName != "" {
+				successfulTests[result.TestName] = true
+			}
+		} else {
+			// Add to failed test names set if test name is provided
+			if result.TestName != "" {
+				failedTests[result.TestName] = true
+			}
 		}
 		totalErrors += len(result.Errors)
 		totalWarnings += len(result.Warnings)
 	}
 
+	// Convert sets to slices for unique test names
+	for testName := range successfulTests {
+		summary.SuccessfulTestNames = append(summary.SuccessfulTestNames, testName)
+	}
+	for testName := range failedTests {
+		summary.FailedTestNames = append(summary.FailedTestNames, testName)
+	}
+
 	summary.ValidationErrors = totalErrors
 	summary.ValidationWarnings = totalWarnings
 
-	if len(results) > 0 {
-		summary.SuccessRate = float64(validCount) / float64(len(results)) * 100
+	if totalRecords > 0 {
+		summary.SuccessRate = float64(validCount) / float64(totalRecords) * 100
 	}
 
-	// Total tests ran is the number of records processed (each record is 1 test)
-	summary.TotalTestsRan = len(results)
+	// Total tests ran is the number of unique test types that were executed
+	// Count all unique test names (merge both successful and failed)
+	allTests := make(map[string]bool)
+	for testName := range successfulTests {
+		allTests[testName] = true
+	}
+	for testName := range failedTests {
+		allTests[testName] = true
+	}
+	summary.TotalTestsRan = len(allTests)
 
 	return summary
 }
