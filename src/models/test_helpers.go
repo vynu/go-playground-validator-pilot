@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"reflect"
 	"strings"
 	"time"
@@ -78,16 +77,7 @@ func generateLongString(length int) string {
 }
 
 // MarshalJSON methods for testing JSON serialization
-
-func (i IncidentPayload) MarshalJSON() ([]byte, error) {
-	type Alias IncidentPayload
-	return json.Marshal((*Alias)(&i))
-}
-
-func (i *IncidentPayload) UnmarshalJSON(data []byte) error {
-	type Alias IncidentPayload
-	return json.Unmarshal(data, (*Alias)(i))
-}
+// Note: Moved to incident.go to avoid circular dependencies
 
 // Test data builders for complex structures
 

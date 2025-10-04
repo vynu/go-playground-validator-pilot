@@ -603,6 +603,8 @@ total:                                                  (statements)           8
 - [ ] Field-specific validation (email, URL, etc.)
 - [ ] JSON marshaling/unmarshaling
 - [ ] Edge cases and boundary values
+- [ ] Array validation scenarios
+- [ ] Batch validation with threshold parameter
 
 ### ✅ Validation Tests (`validations/`)
 - [ ] Constructor test (`NewXValidator`)
@@ -611,11 +613,306 @@ total:                                                  (statements)           8
 - [ ] Business logic warnings
 - [ ] Error message accuracy
 - [ ] Performance tests (if applicable)
+- [ ] Batch session manager tests (if using threshold validation)
 
 ### ✅ Integration Tests (Automatic)
 - [ ] Main tests run without modification
 - [ ] Registry tests work automatically
 - [ ] E2E tests include new model (add test data to `test_data/`)
+- [ ] Array validation tests with valid/invalid mix
+- [ ] Threshold validation tests with different percentages
+
+## 🧪 Testing Array Validation and Threshold Features
+
+### Testing Array Validation in Models
+
+When testing array validation functionality, add tests for batch processing scenarios:
+
+```go
+// TestBatchSessionManager tests the batch session tracking
+func TestBatchSessionManager(t *testing.T) {
+    manager := models.GetBatchSessionManager()
+
+    tests := []struct {
+        name           string
+        threshold      *float64
+        validRecords   int
+        invalidRecords int
+        expectStatus   string
+    }{
+        {
+            name:           "80% valid with 20% threshold - success",
+            threshold:      floatPtr(20.0),
+            validRecords:   80,
+            invalidRecords: 20,
+            expectStatus:   "success",
+        },
+        {
+            name:           "10% valid with 20% threshold - failed",
+            threshold:      floatPtr(20.0),
+            validRecords:   10,
+            invalidRecords: 90,
+            expectStatus:   "failed",
+        },
+        {
+            name:           "exactly 20% valid with 20% threshold - success",
+            threshold:      floatPtr(20.0),
+            validRecords:   20,
+            invalidRecords: 80,
+            expectStatus:   "success",
+        },
+        {
+            name:           "no threshold with mixed records - success",
+            threshold:      nil,
+            validRecords:   50,
+            invalidRecords: 50,
+            expectStatus:   "success",
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            batchID := "test_batch_" + tt.name
+            session := manager.CreateBatchSession(batchID, tt.threshold)
+
+            if session == nil {
+                t.Fatal("CreateBatchSession returned nil")
+            }
+
+            manager.UpdateBatchSession(batchID, tt.validRecords, tt.invalidRecords, 0)
+            status, err := manager.FinalizeBatchSession(batchID)
+
+            if err != nil {
+                t.Fatalf("FinalizeBatchSession failed: %v", err)
+            }
+
+            if status != tt.expectStatus {
+                t.Errorf("Expected status %s, got %s", tt.expectStatus, status)
+            }
+        })
+    }
+}
+
+// Helper function for creating float64 pointers
+func floatPtr(f float64) *float64 {
+    return &f
+}
+
+// TestArrayValidationResult_ThresholdEdgeCases tests threshold edge cases
+func TestArrayValidationResult_ThresholdEdgeCases(t *testing.T) {
+    tests := []struct {
+        name           string
+        validRecords   int
+        totalRecords   int
+        threshold      *float64
+        expectStatus   string
+    }{
+        {
+            name:         "20.0001% valid with 20% threshold",
+            validRecords: 20001,
+            totalRecords: 100000,
+            threshold:    floatPtr(20.0),
+            expectStatus: "success",
+        },
+        {
+            name:         "19.9999% valid with 20% threshold",
+            validRecords: 19999,
+            totalRecords: 100000,
+            threshold:    floatPtr(20.0),
+            expectStatus: "failed",
+        },
+        {
+            name:         "single valid record no threshold",
+            validRecords: 1,
+            totalRecords: 1,
+            threshold:    nil,
+            expectStatus: "success",
+        },
+        {
+            name:         "single invalid record no threshold",
+            validRecords: 0,
+            totalRecords: 1,
+            threshold:    nil,
+            expectStatus: "failed",
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            successRate := (float64(tt.validRecords) / float64(tt.totalRecords)) * 100.0
+
+            var status string
+            if tt.threshold != nil {
+                if successRate >= *tt.threshold {
+                    status = "success"
+                } else {
+                    status = "failed"
+                }
+            } else {
+                if tt.totalRecords == 1 && tt.validRecords == 0 {
+                    status = "failed"
+                } else {
+                    status = "success"
+                }
+            }
+
+            if status != tt.expectStatus {
+                t.Errorf("Expected status %s, got %s (success_rate: %.4f%%)",
+                    tt.expectStatus, status, successRate)
+            }
+        })
+    }
+}
+```
+
+### Testing Result Filtering
+
+Test that valid rows are correctly excluded from results:
+
+```go
+// TestArrayValidation_ResultFiltering tests that valid rows are excluded
+func TestArrayValidation_ResultFiltering(t *testing.T) {
+    // Create test data with mixed valid/invalid records
+    records := []map[string]interface{}{
+        {
+            "id":    "VALID-001",
+            "name":  "Valid Record 1",
+            "email": "valid1@example.com",
+            "age":   25,
+        },
+        {
+            "id":    "VALID-002",
+            "name":  "Valid Record 2",
+            "email": "valid2@example.com",
+            "age":   30,
+        },
+        {
+            "id":    "INVALID",
+            "name":  "x", // Too short
+            "email": "invalid-email",
+            "age":   5, // Below minimum
+        },
+    }
+
+    // Validate array
+    result, err := registry.ValidateArray("mymodel", records, nil)
+    if err != nil {
+        t.Fatalf("ValidateArray failed: %v", err)
+    }
+
+    // Check that only invalid rows are in results
+    if len(result.Results) != 1 {
+        t.Errorf("Expected 1 invalid row in results, got %d", len(result.Results))
+    }
+
+    // Check that the invalid row is the correct one
+    if len(result.Results) > 0 && result.Results[0].RecordIdentifier != "INVALID" {
+        t.Errorf("Expected invalid row to have ID 'INVALID', got %s",
+            result.Results[0].RecordIdentifier)
+    }
+
+    // Verify counts
+    if result.TotalRecords != 3 {
+        t.Errorf("Expected 3 total records, got %d", result.TotalRecords)
+    }
+    if result.ValidRecords != 2 {
+        t.Errorf("Expected 2 valid records, got %d", result.ValidRecords)
+    }
+    if result.InvalidRecords != 1 {
+        t.Errorf("Expected 1 invalid record, got %d", result.InvalidRecords)
+    }
+}
+```
+
+### Testing Threshold Validation in Validators
+
+Add threshold-specific tests to your validator test suite:
+
+```go
+// TestMyModelValidator_ThresholdValidation tests threshold behavior
+func TestMyModelValidator_ThresholdValidation(t *testing.T) {
+    validator := NewMyModelValidator()
+
+    tests := []struct {
+        name            string
+        payloads        []models.MyModelPayload
+        threshold       *float64
+        expectStatus    string
+        expectValid     int
+        expectInvalid   int
+    }{
+        {
+            name: "batch with 80% valid, 20% threshold",
+            payloads: []models.MyModelPayload{
+                getValidMyModelPayload(),
+                getValidMyModelPayload(),
+                getValidMyModelPayload(),
+                getValidMyModelPayload(),
+                getInvalidMyModelPayload(),
+            },
+            threshold:     floatPtr(20.0),
+            expectStatus:  "success",
+            expectValid:   4,
+            expectInvalid: 1,
+        },
+        {
+            name: "batch with 10% valid, 20% threshold",
+            payloads: []models.MyModelPayload{
+                getValidMyModelPayload(),
+                getInvalidMyModelPayload(),
+                getInvalidMyModelPayload(),
+                getInvalidMyModelPayload(),
+                getInvalidMyModelPayload(),
+            },
+            threshold:     floatPtr(20.0),
+            expectStatus:  "failed",
+            expectValid:   1,
+            expectInvalid: 4,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            validCount := 0
+            invalidCount := 0
+
+            for _, payload := range tt.payloads {
+                result := validator.ValidatePayload(payload)
+                if result.IsValid {
+                    validCount++
+                } else {
+                    invalidCount++
+                }
+            }
+
+            if validCount != tt.expectValid {
+                t.Errorf("Expected %d valid, got %d", tt.expectValid, validCount)
+            }
+            if invalidCount != tt.expectInvalid {
+                t.Errorf("Expected %d invalid, got %d", tt.expectInvalid, invalidCount)
+            }
+
+            // Calculate success rate
+            successRate := (float64(validCount) / float64(len(tt.payloads))) * 100.0
+
+            var status string
+            if tt.threshold != nil {
+                if successRate >= *tt.threshold {
+                    status = "success"
+                } else {
+                    status = "failed"
+                }
+            } else {
+                status = "success"
+            }
+
+            if status != tt.expectStatus {
+                t.Errorf("Expected status %s, got %s", tt.expectStatus, status)
+            }
+        })
+    }
+}
+```
 
 ## 🔧 Advanced Testing Patterns
 

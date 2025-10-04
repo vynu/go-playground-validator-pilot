@@ -5,20 +5,23 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 )
 
 // ArrayValidationResult represents the result of validating an array of records
 type ArrayValidationResult struct {
-	BatchID        string                `json:"batch_id"`           // Universal tracking
-	Status         string                `json:"status"`             // "completed"
-	TotalRecords   int                   `json:"total_records"`      // Total number of records
-	ValidRecords   int                   `json:"valid_records"`      // Number of valid records
-	InvalidRecords int                   `json:"invalid_records"`    // Number of invalid records
-	ProcessingTime int64                 `json:"processing_time_ms"` // Processing time in milliseconds
-	CompletedAt    time.Time             `json:"completed_at"`       // Completion timestamp
-	Summary        ValidationSummary     `json:"summary"`            // Summary of validation
-	Results        []RowValidationResult `json:"results"`            // Individual row results
+	BatchID        string                `json:"batch_id"`            // Universal tracking
+	Status         string                `json:"status"`              // "success" or "failed" based on threshold
+	TotalRecords   int                   `json:"total_records"`       // Total number of records
+	ValidRecords   int                   `json:"valid_records"`       // Number of valid records
+	InvalidRecords int                   `json:"invalid_records"`     // Number of invalid records
+	WarningRecords int                   `json:"warning_records"`     // Number of records with warnings only
+	Threshold      *float64              `json:"threshold,omitempty"` // Optional threshold percentage (e.g., 20.0 for 20%)
+	ProcessingTime int64                 `json:"processing_time_ms"`  // Processing time in milliseconds
+	CompletedAt    time.Time             `json:"completed_at"`        // Completion timestamp
+	Summary        ValidationSummary     `json:"summary"`             // Summary of validation
+	Results        []RowValidationResult `json:"results"`             // Individual row results (only invalid/warning rows)
 }
 
 // RowValidationResult represents the validation result for a single row
@@ -130,4 +133,159 @@ func BuildSummary(results []RowValidationResult) ValidationSummary {
 	summary.TotalTestsRan = len(allTests)
 
 	return summary
+}
+
+// BatchSession tracks validation across multiple requests
+type BatchSession struct {
+	BatchID        string    `json:"batch_id"`
+	TotalRecords   int       `json:"total_records"`
+	ValidRecords   int       `json:"valid_records"`
+	InvalidRecords int       `json:"invalid_records"`
+	WarningRecords int       `json:"warning_records"`
+	Threshold      *float64  `json:"threshold,omitempty"`
+	StartedAt      time.Time `json:"started_at"`
+	LastUpdated    time.Time `json:"last_updated"`
+	IsFinal        bool      `json:"is_final"` // Set to true when client sends final batch
+	mutex          sync.RWMutex
+}
+
+// BatchSessionManager manages batch sessions across multiple requests
+type BatchSessionManager struct {
+	sessions map[string]*BatchSession
+	mutex    sync.RWMutex
+}
+
+var (
+	globalBatchManager *BatchSessionManager
+	batchManagerOnce   sync.Once
+)
+
+// GetBatchSessionManager returns the global batch session manager
+func GetBatchSessionManager() *BatchSessionManager {
+	batchManagerOnce.Do(func() {
+		globalBatchManager = &BatchSessionManager{
+			sessions: make(map[string]*BatchSession),
+		}
+	})
+	return globalBatchManager
+}
+
+// CreateBatchSession creates a new batch session
+func (bsm *BatchSessionManager) CreateBatchSession(batchID string, threshold *float64) *BatchSession {
+	bsm.mutex.Lock()
+	defer bsm.mutex.Unlock()
+
+	session := &BatchSession{
+		BatchID:     batchID,
+		Threshold:   threshold,
+		StartedAt:   time.Now(),
+		LastUpdated: time.Now(),
+		IsFinal:     false,
+	}
+	bsm.sessions[batchID] = session
+	return session
+}
+
+// GetBatchSession retrieves a batch session by ID
+func (bsm *BatchSessionManager) GetBatchSession(batchID string) (*BatchSession, bool) {
+	bsm.mutex.RLock()
+	defer bsm.mutex.RUnlock()
+
+	session, exists := bsm.sessions[batchID]
+	return session, exists
+}
+
+// UpdateBatchSession adds validation results to existing batch session
+func (bsm *BatchSessionManager) UpdateBatchSession(batchID string, validCount, invalidCount, warningCount int) error {
+	bsm.mutex.Lock()
+	defer bsm.mutex.Unlock()
+
+	session, exists := bsm.sessions[batchID]
+	if !exists {
+		return fmt.Errorf("batch session %s not found", batchID)
+	}
+
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+
+	session.TotalRecords += validCount + invalidCount
+	session.ValidRecords += validCount
+	session.InvalidRecords += invalidCount
+	session.WarningRecords += warningCount
+	session.LastUpdated = time.Now()
+
+	return nil
+}
+
+// FinalizeBatchSession marks the batch as complete and returns final status
+func (bsm *BatchSessionManager) FinalizeBatchSession(batchID string) (string, error) {
+	bsm.mutex.Lock()
+	defer bsm.mutex.Unlock()
+
+	session, exists := bsm.sessions[batchID]
+	if !exists {
+		return "", fmt.Errorf("batch session %s not found", batchID)
+	}
+
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+
+	session.IsFinal = true
+	session.LastUpdated = time.Now()
+
+	// Calculate final status based on threshold
+	status := "success"
+	if session.Threshold != nil && session.TotalRecords > 0 {
+		successRate := (float64(session.ValidRecords) / float64(session.TotalRecords)) * 100.0
+		if successRate < *session.Threshold {
+			status = "failed"
+		}
+	} else if session.TotalRecords == 1 && session.InvalidRecords > 0 {
+		status = "failed"
+	}
+
+	return status, nil
+}
+
+// DeleteBatchSession removes a batch session
+func (bsm *BatchSessionManager) DeleteBatchSession(batchID string) {
+	bsm.mutex.Lock()
+	defer bsm.mutex.Unlock()
+
+	delete(bsm.sessions, batchID)
+}
+
+// GetBatchStatus returns current status of batch session
+func (bs *BatchSession) GetStatus() map[string]interface{} {
+	bs.mutex.RLock()
+	defer bs.mutex.RUnlock()
+
+	successRate := 0.0
+	if bs.TotalRecords > 0 {
+		successRate = (float64(bs.ValidRecords) / float64(bs.TotalRecords)) * 100.0
+	}
+
+	status := "in_progress"
+	if bs.IsFinal {
+		status = "success"
+		if bs.Threshold != nil && successRate < *bs.Threshold {
+			status = "failed"
+		} else if bs.TotalRecords == 1 && bs.InvalidRecords > 0 {
+			status = "failed"
+		}
+	}
+
+	return map[string]interface{}{
+		"batch_id":        bs.BatchID,
+		"status":          status,
+		"total_records":   bs.TotalRecords,
+		"valid_records":   bs.ValidRecords,
+		"invalid_records": bs.InvalidRecords,
+		"warning_records": bs.WarningRecords,
+		"success_rate":    successRate,
+		"threshold":       bs.Threshold,
+		"started_at":      bs.StartedAt,
+		"last_updated":    bs.LastUpdated,
+		"is_final":        bs.IsFinal,
+	}
 }

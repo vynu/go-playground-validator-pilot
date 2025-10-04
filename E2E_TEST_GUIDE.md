@@ -157,13 +157,16 @@ curl -X POST http://localhost:8086/validate/incident \
   - ✅ Row-level validation results with individual error tracking
   - ✅ Summary statistics (success rate, error counts, processing time)
   - ✅ Mixed valid/invalid record handling
+  - ✅ Valid row filtering (only invalid/warning rows in results)
   - ✅ Backward compatibility with single object validation
 - **Tests**:
   1. Array validation with 2 valid incident records
-  2. Array validation with mixed valid/invalid records
-  3. Array validation returns proper summary statistics
-  4. Array validation includes row-level validation results
-  5. Single object validation backward compatibility
+  2. Array validation excludes valid rows from results
+  3. Array validation with mixed valid/invalid records
+  4. Array validation only includes invalid rows in results
+  5. Array validation returns proper summary statistics
+  6. Array validation with valid record has warnings in results
+  7. Single object validation backward compatibility
 
 Example array validation request:
 ```bash
@@ -172,8 +175,8 @@ curl -X POST http://localhost:8086/validate \
   -d '{
     "model_type": "incident",
     "data": [
-      { "id": "INC-001", "title": "Issue 1", ... },
-      { "id": "INC-002", "title": "Issue 2", ... }
+      { "id": "INC-20240115-0001", "title": "Issue 1", ... },
+      { "id": "INC-20240115-0002", "title": "Issue 2", ... }
     ]
   }'
 ```
@@ -182,12 +185,13 @@ curl -X POST http://localhost:8086/validate \
 ```json
 {
   "batch_id": "auto_abc123",
-  "status": "completed",
+  "status": "success",
   "total_records": 2,
   "valid_records": 2,
   "invalid_records": 0,
+  "warning_records": 0,
   "processing_time_ms": 5,
-  "completed_at": "2025-10-02T12:00:00Z",
+  "completed_at": "2025-10-03T12:00:00Z",
   "summary": {
     "success_rate": 100,
     "validation_errors": 0,
@@ -195,21 +199,82 @@ curl -X POST http://localhost:8086/validate \
     "total_records_processed": 2,
     "total_tests_ran": 2
   },
+  "results": []
+}
+```
+
+**Note**: The `results` array only includes invalid records or records with warnings. Valid records without warnings are excluded to reduce response payload size.
+
+### Phase 10: Threshold Validation Testing ⭐ **NEW**
+- **Purpose**: Tests threshold-based validation with percentage success criteria
+- **Features**:
+  - ✅ Optional threshold parameter for percentage-based validation
+  - ✅ Status calculation: "success" or "failed" based on valid percentage
+  - ✅ Strict threshold comparison (>= threshold for success)
+  - ✅ Default behavior without threshold (success for multiple records, fail for single invalid)
+  - ✅ Support for multi-request batch session tracking
+- **Tests**:
+  1. 80% valid with 20% threshold → success
+  2. 10% valid with 20% threshold → failed
+  3. Exactly 20% valid with 20% threshold → success (strict >= comparison)
+  4. No threshold with multiple records → success (default)
+  5. Single invalid record with no threshold → failed
+  6. Exactly 50% valid with 50% threshold → success
+  7. Results exclude only valid rows without warnings
+
+Example threshold validation request:
+```bash
+curl -X POST http://localhost:8086/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "incident",
+    "threshold": 20.0,
+    "data": [
+      { "id": "INC-20240115-1001", ... },
+      { "id": "INC-20240115-1002", ... },
+      { "id": "INVALID-1", ... }
+    ]
+  }'
+```
+
+**Response with Threshold**:
+```json
+{
+  "batch_id": "auto_xyz789",
+  "status": "success",
+  "total_records": 3,
+  "valid_records": 2,
+  "invalid_records": 1,
+  "warning_records": 0,
+  "threshold": 20.0,
+  "processing_time_ms": 8,
+  "completed_at": "2025-10-03T12:00:00Z",
+  "summary": {
+    "success_rate": 66.67,
+    "validation_errors": 5,
+    "validation_warnings": 0,
+    "total_records_processed": 3
+  },
   "results": [
     {
-      "row_index": 0,
-      "record_identifier": "INC-001",
-      "is_valid": true,
-      "validation_time_ms": 2,
-      "errors": [],
-      "warnings": []
-    },
-    ...
+      "row_index": 2,
+      "record_identifier": "INVALID-1",
+      "is_valid": false,
+      "errors": [...]
+    }
   ]
 }
 ```
 
-### Phase 10: HTTP Method Testing
+**Threshold Logic**:
+- **With threshold**: `success_rate >= threshold` → "success", otherwise "failed"
+- **Without threshold**:
+  - Single record: "success" if valid, "failed" if invalid
+  - Multiple records: always "success" (default behavior)
+- **Success rate calculation**: `(valid_records / total_records) * 100.0`
+- **Comparison**: Strict `>=` (e.g., 20.0001% passes with 20% threshold, 19.9999% fails)
+
+### Phase 11: HTTP Method Testing
 - **Purpose**: Tests incorrect HTTP methods return appropriate errors
 - **Tests**:
   - POST to health endpoint → expects 405 (Method Not Allowed)
@@ -220,16 +285,17 @@ curl -X POST http://localhost:8086/validate \
 ### Success Criteria
 ```
 ✅ ALL TESTS PASSED! 🎊
-Total Tests: 31
-Passed: 29-31
-Failed: 0-2
+Total Tests: 40
+Passed: 40
+Failed: 0
 ```
 
-**Note**: 2 expected failures in array validation tests are due to custom incident validator business rules:
-- ID format must be INC-YYYYMMDD-NNNN (test data uses simplified IDs)
-- Priority-severity consistency checks (critical=4-5, high=3-4, etc.)
-
-These failures demonstrate that the validation system is working correctly!
+The test suite now includes:
+- **Phase 0**: Unit tests (model-agnostic framework)
+- **Phases 1-8**: Server lifecycle and basic functionality
+- **Phase 9**: Array validation (7 tests)
+- **Phase 10**: Threshold validation (7 tests)
+- **Phase 11**: HTTP method validation (2 tests)
 
 ### Common Warning (Expected)
 ```

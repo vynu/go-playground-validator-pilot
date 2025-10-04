@@ -125,8 +125,9 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 
 	var request struct {
 		ModelType string                   `json:"model_type"`
-		Payload   map[string]interface{}   `json:"payload"`        // Single object validation
-		Data      []map[string]interface{} `json:"data,omitempty"` // Array validation
+		Payload   map[string]interface{}   `json:"payload"`             // Single object validation
+		Data      []map[string]interface{} `json:"data,omitempty"`      // Array validation
+		Threshold *float64                 `json:"threshold,omitempty"` // Optional threshold percentage for batch validation
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -146,7 +147,7 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 	// NEW: Detect array vs single object validation
 	if len(request.Data) > 0 {
 		// Array validation path
-		result, err := globalRegistry.ValidateArray(modelType, request.Data)
+		result, err := globalRegistry.ValidateArray(modelType, request.Data, request.Threshold)
 		if err != nil {
 			sendJSONError(w, "Array validation failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -154,8 +155,9 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 
-		// Set appropriate status code based on validation results
-		if result.InvalidRecords > 0 {
+		// Set appropriate status code based on validation status
+		// "success" = all validation passed threshold, "failed" = below threshold
+		if result.Status == "failed" {
 			w.WriteHeader(http.StatusUnprocessableEntity)
 		}
 
@@ -504,6 +506,13 @@ func getSwaggerSpec() map[string]interface{} {
 					"responses": map[string]interface{}{
 						"200": map[string]interface{}{
 							"description": "Server is healthy",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/HealthResponse",
+									},
+								},
+							},
 						},
 					},
 				},
@@ -516,6 +525,120 @@ func getSwaggerSpec() map[string]interface{} {
 					"responses": map[string]interface{}{
 						"200": map[string]interface{}{
 							"description": "Available model types",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/ModelsResponse",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			"/validate": map[string]interface{}{
+				"post": map[string]interface{}{
+					"summary":     "Validate single object or array of objects",
+					"description": "Validates a single object or an array of objects with optional threshold-based validation. Supports both single object validation (payload field) and batch validation (data field). For batch validation, you can optionally specify a threshold percentage for success criteria.",
+					"tags":        []string{"Generic Validation"},
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"oneOf": []map[string]interface{}{
+										{"$ref": "#/components/schemas/SingleValidationRequest"},
+										{"$ref": "#/components/schemas/ArrayValidationRequest"},
+									},
+								},
+								"examples": map[string]interface{}{
+									"single_object": map[string]interface{}{
+										"summary": "Single object validation",
+										"value": map[string]interface{}{
+											"model_type": "incident",
+											"payload": map[string]interface{}{
+												"id":          "INC-20240115-0001",
+												"title":       "Test Incident",
+												"description": "Testing single object validation",
+												"priority":    5,
+												"severity":    "critical",
+												"status":      "open",
+											},
+										},
+									},
+									"array_validation": map[string]interface{}{
+										"summary": "Array validation without threshold",
+										"value": map[string]interface{}{
+											"model_type": "incident",
+											"data": []map[string]interface{}{
+												{
+													"id":       "INC-20240115-0001",
+													"title":    "Incident 1",
+													"priority": 5,
+													"severity": "critical",
+													"status":   "open",
+												},
+												{
+													"id":       "INC-20240115-0002",
+													"title":    "Incident 2",
+													"priority": 3,
+													"severity": "high",
+													"status":   "open",
+												},
+											},
+										},
+									},
+									"threshold_validation": map[string]interface{}{
+										"summary": "Array validation with 20% threshold",
+										"value": map[string]interface{}{
+											"model_type": "incident",
+											"threshold":  20.0,
+											"data": []map[string]interface{}{
+												{
+													"id":       "INC-20240115-0001",
+													"title":    "Valid Incident",
+													"priority": 5,
+													"severity": "critical",
+													"status":   "open",
+												},
+												{
+													"id":       "INVALID",
+													"title":    "",
+													"priority": 999,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "Single object validation result",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/ValidationResult",
+									},
+								},
+							},
+						},
+						"422": map[string]interface{}{
+							"description": "Array validation result (status: failed when threshold not met)",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/ArrayValidationResult",
+									},
+								},
+							},
+						},
+						"400": map[string]interface{}{
+							"description": "Bad request - invalid model type or malformed payload",
+						},
+						"500": map[string]interface{}{
+							"description": "Internal server error",
 						},
 					},
 				},
@@ -523,12 +646,308 @@ func getSwaggerSpec() map[string]interface{} {
 		},
 		"tags": []map[string]interface{}{
 			{"name": "System", "description": "System health, status and model discovery"},
-			{"name": "Platform Validation", "description": "Platform-specific validation endpoints"},
-			{"name": "Generic Validation", "description": "Generic validation with automatic type conversion"},
+			{"name": "Generic Validation", "description": "Generic validation endpoint supporting all model types with single object and array/batch validation"},
 		},
 		"components": map[string]interface{}{
 			"schemas": map[string]interface{}{
-				"available_models": modelList,
+				"AvailableModels": map[string]interface{}{
+					"type":        "array",
+					"description": "List of available model types that can be validated",
+					"items": map[string]interface{}{
+						"type": "string",
+						"enum": modelList,
+					},
+					"example": modelList,
+				},
+				"HealthResponse": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"status":  map[string]interface{}{"type": "string", "example": "healthy"},
+						"version": map[string]interface{}{"type": "string", "example": "2.0.0-modular"},
+						"uptime":  map[string]interface{}{"type": "string", "example": "1h30m45s"},
+						"server":  map[string]interface{}{"type": "string", "example": "modular-validation-server"},
+					},
+				},
+				"ModelsResponse": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"count":  map[string]interface{}{"type": "integer", "example": 6},
+						"source": map[string]interface{}{"type": "string", "example": "unified-registry"},
+						"models": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": map[string]interface{}{"$ref": "#/components/schemas/ModelInfo"},
+						},
+					},
+				},
+				"ModelInfo": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"name":        map[string]interface{}{"type": "string", "example": "Incident Report"},
+						"description": map[string]interface{}{"type": "string", "example": "Incident report validation with operational context"},
+						"version":     map[string]interface{}{"type": "string", "example": "1.0.0"},
+						"author":      map[string]interface{}{"type": "string", "example": "Unified Auto-Registry"},
+						"endpoint":    map[string]interface{}{"type": "string", "example": "/validate/incident"},
+						"tags":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+						"created_at":  map[string]interface{}{"type": "string", "format": "date-time"},
+					},
+				},
+				"SingleValidationRequest": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"model_type", "payload"},
+					"properties": map[string]interface{}{
+						"model_type": map[string]interface{}{
+							"type":        "string",
+							"description": "The type of model to validate",
+							"enum":        modelList,
+							"example":     "incident",
+						},
+						"payload": map[string]interface{}{
+							"type":        "object",
+							"description": "The object to validate",
+							"example": map[string]interface{}{
+								"id":          "INC-20240115-0001",
+								"title":       "Test Incident",
+								"description": "Testing validation",
+								"priority":    5,
+								"severity":    "critical",
+								"status":      "open",
+							},
+						},
+					},
+				},
+				"ArrayValidationRequest": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"model_type", "data"},
+					"properties": map[string]interface{}{
+						"model_type": map[string]interface{}{
+							"type":        "string",
+							"description": "The type of model to validate",
+							"enum":        modelList,
+							"example":     "incident",
+						},
+						"data": map[string]interface{}{
+							"type":        "array",
+							"description": "Array of objects to validate",
+							"items":       map[string]interface{}{"type": "object"},
+							"example": []map[string]interface{}{
+								{
+									"id":       "INC-20240115-0001",
+									"title":    "Incident 1",
+									"priority": 5,
+								},
+								{
+									"id":       "INC-20240115-0002",
+									"title":    "Incident 2",
+									"priority": 3,
+								},
+							},
+						},
+						"threshold": map[string]interface{}{
+							"type":        "number",
+							"format":      "float",
+							"description": "Optional threshold percentage (0-100) for success criteria. Success rate must be >= threshold for status 'success'. For example, threshold of 20.0 means at least 20% of records must be valid.",
+							"minimum":     0,
+							"maximum":     100,
+							"example":     20.0,
+						},
+					},
+				},
+				"ValidationResult": map[string]interface{}{
+					"type":        "object",
+					"description": "Single object validation result",
+					"properties": map[string]interface{}{
+						"is_valid": map[string]interface{}{
+							"type":        "boolean",
+							"description": "Whether the payload is valid",
+							"example":     true,
+						},
+						"model_type": map[string]interface{}{
+							"type":        "string",
+							"description": "The model type that was validated",
+							"example":     "incident",
+						},
+						"provider": map[string]interface{}{
+							"type":        "string",
+							"description": "The validation provider used",
+							"example":     "go-playground",
+						},
+						"errors": map[string]interface{}{
+							"type":        "array",
+							"description": "List of validation errors (empty if valid)",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationError"},
+						},
+						"warnings": map[string]interface{}{
+							"type":        "array",
+							"description": "List of validation warnings (business logic warnings)",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationWarning"},
+						},
+					},
+				},
+				"ArrayValidationResult": map[string]interface{}{
+					"type":        "object",
+					"description": "Array/batch validation result with optional threshold-based status",
+					"properties": map[string]interface{}{
+						"batch_id": map[string]interface{}{
+							"type":        "string",
+							"description": "Auto-generated batch identifier",
+							"example":     "auto_abc123xyz",
+						},
+						"status": map[string]interface{}{
+							"type":        "string",
+							"description": "Overall batch status: 'success' if threshold met or no threshold, 'failed' if below threshold",
+							"enum":        []string{"success", "failed"},
+							"example":     "success",
+						},
+						"total_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total number of records validated",
+							"example":     10,
+						},
+						"valid_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Number of valid records",
+							"example":     8,
+						},
+						"invalid_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Number of invalid records",
+							"example":     2,
+						},
+						"warning_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Number of records with warnings only",
+							"example":     1,
+						},
+						"threshold": map[string]interface{}{
+							"type":        "number",
+							"format":      "float",
+							"description": "The threshold percentage that was applied (if any)",
+							"example":     20.0,
+						},
+						"processing_time_ms": map[string]interface{}{
+							"type":        "integer",
+							"description": "Processing time in milliseconds",
+							"example":     125,
+						},
+						"completed_at": map[string]interface{}{
+							"type":        "string",
+							"format":      "date-time",
+							"description": "Timestamp when validation completed",
+						},
+						"summary": map[string]interface{}{
+							"type":        "object",
+							"description": "Summary statistics",
+							"$ref":        "#/components/schemas/ValidationSummary",
+						},
+						"results": map[string]interface{}{
+							"type":        "array",
+							"description": "Individual row results (only invalid rows and rows with warnings - valid rows without warnings are excluded)",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/RowValidationResult"},
+						},
+					},
+				},
+				"ValidationSummary": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"success_rate": map[string]interface{}{
+							"type":        "number",
+							"format":      "float",
+							"description": "Success rate percentage (valid_records / total_records * 100)",
+							"example":     80.0,
+						},
+						"validation_errors": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total number of validation errors across all records",
+							"example":     5,
+						},
+						"validation_warnings": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total number of validation warnings across all records",
+							"example":     2,
+						},
+						"total_records_processed": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total records processed",
+							"example":     10,
+						},
+					},
+				},
+				"RowValidationResult": map[string]interface{}{
+					"type":        "object",
+					"description": "Individual row validation result (only included if invalid or has warnings)",
+					"properties": map[string]interface{}{
+						"row_index": map[string]interface{}{
+							"type":        "integer",
+							"description": "Zero-based index of the row in the input array",
+							"example":     2,
+						},
+						"record_identifier": map[string]interface{}{
+							"type":        "string",
+							"description": "Identifier extracted from the record (e.g., ID field)",
+							"example":     "INC-20240115-0003",
+						},
+						"is_valid": map[string]interface{}{
+							"type":        "boolean",
+							"description": "Whether this row is valid",
+							"example":     false,
+						},
+						"validation_time_ms": map[string]interface{}{
+							"type":        "integer",
+							"description": "Time taken to validate this row in milliseconds",
+							"example":     5,
+						},
+						"errors": map[string]interface{}{
+							"type":        "array",
+							"description": "Validation errors for this row",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationError"},
+						},
+						"warnings": map[string]interface{}{
+							"type":        "array",
+							"description": "Validation warnings for this row",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationWarning"},
+						},
+					},
+				},
+				"ValidationError": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"field": map[string]interface{}{
+							"type":        "string",
+							"description": "The field that failed validation",
+							"example":     "priority",
+						},
+						"message": map[string]interface{}{
+							"type":        "string",
+							"description": "Human-readable error message",
+							"example":     "Priority must be between 1 and 5",
+						},
+						"code": map[string]interface{}{
+							"type":        "string",
+							"description": "Error code for programmatic handling",
+							"example":     "VALUE_OUT_OF_RANGE",
+						},
+					},
+				},
+				"ValidationWarning": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"field": map[string]interface{}{
+							"type":        "string",
+							"description": "The field that triggered the warning",
+							"example":     "status",
+						},
+						"message": map[string]interface{}{
+							"type":        "string",
+							"description": "Human-readable warning message",
+							"example":     "Incident is older than 90 days",
+						},
+						"code": map[string]interface{}{
+							"type":        "string",
+							"description": "Warning code for programmatic handling",
+							"example":     "STALE_INCIDENT",
+						},
+					},
+				},
 			},
 		},
 	}

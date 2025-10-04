@@ -364,15 +364,29 @@ The E2E suite will automatically:
 
 ## 🔧 Manual Testing with cURL
 
-### Test Valid Payload
+### Test Valid Payload (Single Object)
 ```bash
 # Start the validator server (if not already running)
 PORT=8086 ./validator &
 
-# Test valid user profile
-curl -X POST http://localhost:8086/validate/user_profile \
+# Test valid user profile (single object validation)
+curl -X POST http://localhost:8086/validate \
   -H "Content-Type: application/json" \
-  -d @test_data/valid/user_profile.json | jq .
+  -d '{
+    "model_type": "user_profile",
+    "payload": {
+      "id": "user_12345",
+      "username": "john_doe",
+      "email": "john.doe@example.com",
+      "first_name": "John",
+      "last_name": "Doe",
+      "age": 28,
+      "role": "user",
+      "status": "active",
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-09-27T14:22:00Z"
+    }
+  }' | jq .
 ```
 
 **Expected Response:**
@@ -385,6 +399,136 @@ curl -X POST http://localhost:8086/validate/user_profile \
   "warnings": []
 }
 ```
+
+### Test Array Validation
+```bash
+# Test multiple user profiles in a single request
+curl -X POST http://localhost:8086/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "user_profile",
+    "data": [
+      {
+        "id": "user_001",
+        "username": "alice_smith",
+        "email": "alice@example.com",
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "age": 30,
+        "role": "user",
+        "status": "active",
+        "created_at": "2024-01-15T10:30:00Z",
+        "updated_at": "2024-09-27T14:22:00Z"
+      },
+      {
+        "id": "user_002",
+        "username": "bob_jones",
+        "email": "bob@example.com",
+        "first_name": "Bob",
+        "last_name": "Jones",
+        "age": 25,
+        "role": "user",
+        "status": "active",
+        "created_at": "2024-01-15T10:30:00Z",
+        "updated_at": "2024-09-27T14:22:00Z"
+      }
+    ]
+  }' | jq .
+```
+
+**Expected Array Response:**
+```json
+{
+  "batch_id": "auto_abc123",
+  "status": "success",
+  "total_records": 2,
+  "valid_records": 2,
+  "invalid_records": 0,
+  "warning_records": 0,
+  "processing_time_ms": 8,
+  "completed_at": "2025-10-03T12:00:00Z",
+  "summary": {
+    "success_rate": 100,
+    "validation_errors": 0,
+    "validation_warnings": 0,
+    "total_records_processed": 2
+  },
+  "results": []
+}
+```
+
+**Note**: The `results` array only includes invalid records or records with warnings. Valid records without warnings are excluded to reduce response payload size.
+
+### Test Array Validation with Threshold
+```bash
+# Test with threshold parameter (20% success rate required)
+curl -X POST http://localhost:8086/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "user_profile",
+    "threshold": 20.0,
+    "data": [
+      {
+        "id": "user_001",
+        "username": "valid_user",
+        "email": "valid@example.com",
+        "first_name": "Valid",
+        "last_name": "User",
+        "age": 30,
+        "role": "user",
+        "status": "active",
+        "created_at": "2024-01-15T10:30:00Z",
+        "updated_at": "2024-09-27T14:22:00Z"
+      },
+      {
+        "id": "bad",
+        "username": "123",
+        "email": "invalid",
+        "age": 5
+      }
+    ]
+  }' | jq .
+```
+
+**Expected Threshold Response:**
+```json
+{
+  "batch_id": "auto_xyz789",
+  "status": "success",
+  "total_records": 2,
+  "valid_records": 1,
+  "invalid_records": 1,
+  "warning_records": 0,
+  "threshold": 20.0,
+  "processing_time_ms": 12,
+  "completed_at": "2025-10-03T12:00:00Z",
+  "summary": {
+    "success_rate": 50.0,
+    "validation_errors": 5,
+    "validation_warnings": 0,
+    "total_records_processed": 2
+  },
+  "results": [
+    {
+      "row_index": 1,
+      "record_identifier": "bad",
+      "is_valid": false,
+      "errors": [
+        {
+          "field": "id",
+          "message": "Must be at least 3 characters/value",
+          "code": "VALUE_TOO_SHORT"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Threshold Logic**:
+- Success rate = `(valid_records / total_records) * 100`
+- Status = "success" if `success_rate >= threshold`, otherwise "failed"
+- In this case: 50% >= 20%, so status is "success"
 
 ### Test Invalid Payload
 ```bash

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -205,4 +206,233 @@ func TestBuildSummary_AllInvalid(t *testing.T) {
 	if summary.ValidationErrors != 2 {
 		t.Errorf("Expected ValidationErrors = 2, got %d", summary.ValidationErrors)
 	}
+}
+
+// Test Batch Session Manager
+func TestBatchSessionManager_CreateSession(t *testing.T) {
+	manager := GetBatchSessionManager()
+	threshold := 20.0
+
+	session := manager.CreateBatchSession("batch-001", &threshold)
+
+	if session.BatchID != "batch-001" {
+		t.Errorf("Expected BatchID = batch-001, got %s", session.BatchID)
+	}
+
+	if session.Threshold == nil || *session.Threshold != 20.0 {
+		t.Errorf("Expected Threshold = 20.0, got %v", session.Threshold)
+	}
+
+	if session.TotalRecords != 0 {
+		t.Errorf("Expected TotalRecords = 0, got %d", session.TotalRecords)
+	}
+
+	// Clean up
+	manager.DeleteBatchSession("batch-001")
+}
+
+func TestBatchSessionManager_UpdateSession(t *testing.T) {
+	manager := GetBatchSessionManager()
+	threshold := 50.0
+
+	session := manager.CreateBatchSession("batch-002", &threshold)
+
+	// Update with validation results
+	err := manager.UpdateBatchSession("batch-002", 80, 20, 5)
+	if err != nil {
+		t.Errorf("UpdateBatchSession failed: %v", err)
+	}
+
+	// Verify updated values
+	retrievedSession, exists := manager.GetBatchSession("batch-002")
+	if !exists {
+		t.Fatal("Session not found after update")
+	}
+
+	if retrievedSession.ValidRecords != 80 {
+		t.Errorf("Expected ValidRecords = 80, got %d", retrievedSession.ValidRecords)
+	}
+
+	if retrievedSession.InvalidRecords != 20 {
+		t.Errorf("Expected InvalidRecords = 20, got %d", retrievedSession.InvalidRecords)
+	}
+
+	if retrievedSession.TotalRecords != 100 {
+		t.Errorf("Expected TotalRecords = 100, got %d", retrievedSession.TotalRecords)
+	}
+
+	if retrievedSession.WarningRecords != 5 {
+		t.Errorf("Expected WarningRecords = 5, got %d", retrievedSession.WarningRecords)
+	}
+
+	// Clean up
+	manager.DeleteBatchSession("batch-002")
+}
+
+func TestBatchSessionManager_FinalizeSession(t *testing.T) {
+	manager := GetBatchSessionManager()
+
+	tests := []struct {
+		name           string
+		threshold      *float64
+		validCount     int
+		invalidCount   int
+		expectedStatus string
+	}{
+		{
+			name:           "Success with threshold - exactly at threshold",
+			threshold:      floatPtr(20.0),
+			validCount:     20,
+			invalidCount:   80,
+			expectedStatus: "success",
+		},
+		{
+			name:           "Success with threshold - above threshold",
+			threshold:      floatPtr(20.0),
+			validCount:     21,
+			invalidCount:   79,
+			expectedStatus: "success",
+		},
+		{
+			name:           "Failed with threshold - below threshold",
+			threshold:      floatPtr(20.0),
+			validCount:     19,
+			invalidCount:   81,
+			expectedStatus: "failed",
+		},
+		{
+			name:           "Success without threshold",
+			threshold:      nil,
+			validCount:     50,
+			invalidCount:   50,
+			expectedStatus: "success",
+		},
+		{
+			name:           "Single record valid - no threshold",
+			threshold:      nil,
+			validCount:     1,
+			invalidCount:   0,
+			expectedStatus: "success",
+		},
+		{
+			name:           "Single record invalid - no threshold",
+			threshold:      nil,
+			validCount:     0,
+			invalidCount:   1,
+			expectedStatus: "failed",
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			batchID := fmt.Sprintf("batch-finalize-%d", i)
+			session := manager.CreateBatchSession(batchID, tt.threshold)
+
+			// Update session with counts
+			manager.UpdateBatchSession(batchID, tt.validCount, tt.invalidCount, 0)
+
+			// Finalize session
+			status, err := manager.FinalizeBatchSession(batchID)
+			if err != nil {
+				t.Errorf("FinalizeBatchSession failed: %v", err)
+			}
+
+			if status != tt.expectedStatus {
+				t.Errorf("Expected status = %s, got %s", tt.expectedStatus, status)
+			}
+
+			// Verify IsFinal flag
+			retrievedSession, _ := manager.GetBatchSession(batchID)
+			if !retrievedSession.IsFinal {
+				t.Error("Expected IsFinal = true after finalization")
+			}
+
+			// Clean up
+			manager.DeleteBatchSession(batchID)
+		})
+	}
+}
+
+func TestBatchSession_GetStatus(t *testing.T) {
+	manager := GetBatchSessionManager()
+	threshold := 30.0
+
+	session := manager.CreateBatchSession("batch-status", &threshold)
+	manager.UpdateBatchSession("batch-status", 40, 60, 5)
+
+	status := session.GetStatus()
+
+	// Verify status fields
+	if status["batch_id"] != "batch-status" {
+		t.Errorf("Expected batch_id = batch-status, got %v", status["batch_id"])
+	}
+
+	if status["total_records"] != 100 {
+		t.Errorf("Expected total_records = 100, got %v", status["total_records"])
+	}
+
+	if status["valid_records"] != 40 {
+		t.Errorf("Expected valid_records = 40, got %v", status["valid_records"])
+	}
+
+	successRate := status["success_rate"].(float64)
+	if successRate != 40.0 {
+		t.Errorf("Expected success_rate = 40.0, got %.2f", successRate)
+	}
+
+	// Before finalization, status should be "in_progress"
+	if status["status"] != "in_progress" {
+		t.Errorf("Expected status = in_progress, got %v", status["status"])
+	}
+
+	// After finalization with 40% success rate and 30% threshold, should be "success"
+	manager.FinalizeBatchSession("batch-status")
+	status = session.GetStatus()
+
+	if status["status"] != "success" {
+		t.Errorf("Expected status = success (40%% >= 30%%), got %v", status["status"])
+	}
+
+	// Clean up
+	manager.DeleteBatchSession("batch-status")
+}
+
+func TestBatchSession_ThresholdEdgeCases(t *testing.T) {
+	manager := GetBatchSessionManager()
+
+	// Test exact threshold match (20.0% with 20% threshold)
+	threshold := 20.0
+	session := manager.CreateBatchSession("batch-edge-1", &threshold)
+	manager.UpdateBatchSession("batch-edge-1", 20, 80, 0)
+	status, _ := manager.FinalizeBatchSession("batch-edge-1")
+
+	if status != "success" {
+		t.Errorf("Expected success with exact threshold match (20.0%% == 20%%), got %s", status)
+	}
+	manager.DeleteBatchSession("batch-edge-1")
+
+	// Test just above threshold (20.0001% with 20% threshold)
+	session2 := manager.CreateBatchSession("batch-edge-2", &threshold)
+	manager.UpdateBatchSession("batch-edge-2", 20001, 79999, 0)
+	status2, _ := manager.FinalizeBatchSession("batch-edge-2")
+
+	if status2 != "success" {
+		t.Errorf("Expected success with 20.001%% > 20%%, got %s", status2)
+	}
+	manager.DeleteBatchSession("batch-edge-2")
+
+	// Test just below threshold (19.9999% with 20% threshold)
+	session3 := manager.CreateBatchSession("batch-edge-3", &threshold)
+	manager.UpdateBatchSession("batch-edge-3", 19999, 80001, 0)
+	status3, _ := manager.FinalizeBatchSession("batch-edge-3")
+
+	if status3 != "failed" {
+		t.Errorf("Expected failed with 19.999%% < 20%%, got %s", status3)
+	}
+	manager.DeleteBatchSession("batch-edge-3")
+}
+
+// Helper function to create float64 pointer
+func floatPtr(f float64) *float64 {
+	return &f
 }

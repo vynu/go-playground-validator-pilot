@@ -430,14 +430,18 @@ func (ur *UnifiedRegistry) ValidatePayload(modelType ModelType, payload interfac
 }
 
 // ValidateArray validates an array of records and returns structured results
-func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[string]interface{}) (*models.ArrayValidationResult, error) {
+// Only invalid/warning rows are included in the results array
+// Status is determined by threshold: if no threshold provided, status is "success" for single records
+// For multiple records with threshold, status is "success" if success_rate >= threshold, otherwise "failed"
+func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[string]interface{}, threshold *float64) (*models.ArrayValidationResult, error) {
 	// Generate batch_id for tracking
 	batchID := models.GenerateBatchID("auto")
 	startTime := time.Now()
 
-	results := make([]models.RowValidationResult, len(records))
+	allResults := make([]models.RowValidationResult, len(records))
 	validCount := 0
 	invalidCount := 0
+	warningCount := 0
 
 	// Get model info for struct creation
 	modelInfo, err := ur.GetModel(modelType)
@@ -448,25 +452,66 @@ func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[stri
 	// Sequential validation (can be optimized later with worker pool)
 	for i, record := range records {
 		rowResult := ur.validateSingleRow(modelType, modelInfo, record, i)
-		results[i] = rowResult
+		allResults[i] = rowResult
 
 		if rowResult.IsValid {
 			validCount++
+			// Check if it has warnings only (valid but with warnings)
+			if len(rowResult.Warnings) > 0 {
+				warningCount++
+			}
 		} else {
 			invalidCount++
 		}
 	}
 
+	// Filter results: only include invalid rows and rows with warnings
+	filteredResults := make([]models.RowValidationResult, 0)
+	for _, result := range allResults {
+		// Include if invalid OR if valid but has warnings
+		if !result.IsValid || len(result.Warnings) > 0 {
+			filteredResults = append(filteredResults, result)
+		}
+	}
+
+	// Calculate success rate
+	totalRecords := len(records)
+	successRate := 0.0
+	if totalRecords > 0 {
+		successRate = (float64(validCount) / float64(totalRecords)) * 100.0
+	}
+
+	// Determine status based on threshold logic
+	status := "success" // default status
+
+	if threshold != nil {
+		// Threshold is provided - apply strict comparison
+		// success_rate >= threshold means success, otherwise failed
+		if successRate < *threshold {
+			status = "failed"
+		}
+	} else {
+		// No threshold provided
+		// For single record: "success" if valid, "failed" if invalid
+		// For multiple records: "success" (no threshold means we don't fail the batch)
+		if totalRecords == 1 && invalidCount > 0 {
+			status = "failed"
+		}
+		// For multiple records without threshold, status remains "success"
+	}
+
 	arrayResult := &models.ArrayValidationResult{
 		BatchID:        batchID,
-		Status:         "completed",
-		TotalRecords:   len(records),
+		Status:         status,
+		TotalRecords:   totalRecords,
 		ValidRecords:   validCount,
 		InvalidRecords: invalidCount,
+		WarningRecords: warningCount,
+		Threshold:      threshold,
 		ProcessingTime: time.Since(startTime).Milliseconds(),
 		CompletedAt:    time.Now(),
-		Results:        results,
-		Summary:        models.BuildSummary(results),
+		Results:        filteredResults,                 // Only invalid/warning rows
+		Summary:        models.BuildSummary(allResults), // Summary includes all rows
 	}
 
 	return arrayResult, nil
