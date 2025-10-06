@@ -1,0 +1,18 @@
+[
+  {
+    "type": "batch.test.1",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:00:00Z",
+    "source": "https://batch.test.com",
+    "data": {"id": "batch-001"},
+    "status": "completed"
+  },
+  {
+    "type": "batch.test.2",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:00:01Z",
+    "source": "https://batch.test.com",
+    "data": {"id": "batch-002"},
+    "status": "completed"
+  }
+]

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "INC-20250104-0001",
+    "title": "Critical Bug in Payment Processing System Needs Immediate Fix",
+    "description": "Payment processing system is failing for all credit card transactions in the production environment",
+    "severity": "critical",
+    "status": "open",
+    "priority": 5,
+    "category": "bug",
+    "environment": "production",
+    "reported_by": "support@example.com",
+    "assigned_to": "devops@example.com",
+    "reported_at": "2025-01-04T10:00:00Z"
+  },
+  {
+    "id": "INC-20250104-0002",
+    "title": "Performance Degradation in Search Feature Requires Optimization",
+    "description": "Search functionality is experiencing severe performance degradation affecting user experience across platform",
+    "severity": "high",
+    "status": "investigating",
+    "priority": 4,
+    "category": "performance",
+    "environment": "production",
+    "reported_by": "qa@example.com",
+    "assigned_to": "backend@example.com",
+    "reported_at": "2025-01-04T10:01:00Z"
+  },
+  {
+    "id": "INC-20250104-0003",
+    "title": "New Feature Request for Advanced Analytics Dashboard Implementation",
+    "description": "Business team requesting new advanced analytics dashboard with real-time data visualization capabilities",
+    "severity": "low",
+    "status": "open",
+    "priority": 2,
+    "category": "feature",
+    "environment": "development",
+    "reported_by": "product@example.com",
+    "assigned_to": "frontend@example.com",
+    "reported_at": "2025-01-04T10:02:00Z"
+  },
+  {
+    "id": "INC-20250104-0004",
+    "title": "Security Vulnerability in Authentication System Requires Patching",
+    "description": "Critical security vulnerability discovered in authentication system that could allow unauthorized access",
+    "severity": "critical",
+    "status": "investigating",
+    "priority": 5,
+    "category": "security",
+    "environment": "production",
+    "reported_by": "security@example.com",
+    "assigned_to": "security-team@example.com",
+    "reported_at": "2025-01-04T10:03:00Z"
+  },
+  {
+    "id": "INC-20250104-0005",
+    "title": "Database Performance Issues Causing Timeouts in Production Environment",
+    "description": "Database queries are timing out causing application slowdowns and affecting end user experience significantly",
+    "severity": "high",
+    "status": "open",
+    "priority": 4,
+    "category": "performance",
+    "environment": "production",
+    "reported_by": "monitoring@example.com",
+    "assigned_to": "database-team@example.com",
+    "reported_at": "2025-01-04T10:04:00Z"
+  }
+]

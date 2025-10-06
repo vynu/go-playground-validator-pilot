@@ -1,0 +1,63 @@
+[
+  {
+    "id": "INC-20250104-0010",
+    "title": "Critical Bug in Payment Processing System Needs Immediate Fix",
+    "description": "Payment processing system is failing for all credit card transactions in the production environment",
+    "severity": "critical",
+    "status": "open",
+    "priority": 5,
+    "category": "bug",
+    "environment": "production",
+    "reported_by": "support@example.com",
+    "assigned_to": "devops@example.com",
+    "reported_at": "2025-01-04T10:00:00Z"
+  },
+  {
+    "id": "INC-20250104-0011",
+    "title": "Performance Degradation in Search Feature Requires Optimization",
+    "description": "Search functionality is experiencing severe performance degradation affecting user experience across platform",
+    "severity": "high",
+    "status": "investigating",
+    "priority": 4,
+    "category": "performance",
+    "environment": "production",
+    "reported_by": "qa@example.com",
+    "assigned_to": "backend@example.com",
+    "reported_at": "2025-01-04T10:01:00Z"
+  },
+  {
+    "id": "INVALID-001",
+    "title": "Bad",
+    "description": "Short",
+    "severity": "invalid",
+    "status": "unknown",
+    "priority": 999,
+    "category": "bug",
+    "environment": "production",
+    "reported_by": "test@example.com"
+  },
+  {
+    "id": "INVALID-002",
+    "title": "Error",
+    "description": "Too short desc",
+    "severity": "bad",
+    "status": "wrong",
+    "priority": 100,
+    "category": "feature",
+    "environment": "prod",
+    "reported_by": "test@example.com"
+  },
+  {
+    "id": "INC-20250104-0012",
+    "title": "Security Vulnerability in Authentication System Requires Patching",
+    "description": "Critical security vulnerability discovered in authentication system that could allow unauthorized access",
+    "severity": "critical",
+    "status": "investigating",
+    "priority": 5,
+    "category": "security",
+    "environment": "production",
+    "reported_by": "security@example.com",
+    "assigned_to": "security-team@example.com",
+    "reported_at": "2025-01-04T10:03:00Z"
+  }
+]

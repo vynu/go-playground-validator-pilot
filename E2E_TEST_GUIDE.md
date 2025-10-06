@@ -1,182 +1,251 @@
-# E2E Test Suite Guide
+# E2E Test Guide
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Running E2E Tests](#running-e2e-tests)
+3. [Test Data Structure](#test-data-structure)
+4. [Test Phases](#test-phases)
+5. [Docker E2E Tests](#docker-e2e-tests)
+6. [Makefile Commands](#makefile-commands)
+7. [Troubleshooting](#troubleshooting)
+
+---
 
 ## Overview
 
-The `e2e_test_suite.sh` is a comprehensive end-to-end testing script for the Go Playground Data Validator project. It performs thorough testing of all system features including **model-agnostic unit testing**, automatic model discovery, validation functionality, server lifecycle management, and API endpoints.
+The E2E (End-to-End) test suite validates the complete functionality of the Go Playground Data Validator system, including:
+- ✅ Unit tests with coverage analysis
+- ✅ Automatic model discovery
+- ✅ Validation endpoints
+- ✅ Array/batch validation
+- ✅ Threshold-based validation
+- ✅ Docker container testing
+- ✅ Server lifecycle management
 
-### 🚀 **New Model-Agnostic Testing Framework**
+---
 
-The E2E test suite now includes **Phase 0: Unit Testing Suite** which features:
-- ✅ **Model-agnostic main tests** (no specific model dependencies)
-- ✅ **Automatic registry testing** (works with any number of models)
-- ✅ **Zero maintenance overhead** for core tests when adding new models
-- ✅ **Comprehensive coverage analysis** with threshold checking
+## Running E2E Tests
 
-## Prerequisites
+### Prerequisites
 
-Before running the test suite, ensure you have:
+1. **Go environment** properly configured
+2. **Build the binary** first
+3. **Test data** available in `test_data/` directory
+4. **Port 8086** available (or configure custom port)
 
-1. **Go environment** properly set up
-2. **Compiled validator binary** in the project root
-3. **All required dependencies** installed
-4. **No other processes** running on port 8086
-5. **Python3** available for JSON validation tests
+### Quick Start
 
-## Quick Start
-
-### Basic Usage
-
+#### Option 1: Using Make (Recommended)
 ```bash
-# Make the script executable (if not already)
-chmod +x e2e_test_suite.sh
+# Build and run E2E tests
+make test-e2e
 
-# Run the complete test suite
+# This internally runs:
+# 1. make build (builds binary to bin/validator)
+# 2. PORT=8086 ./e2e_test_suite.sh
+```
+
+#### Option 2: Manual Execution
+```bash
+# 1. Build the validator binary
+make build
+
+# 2. Run E2E tests
 ./e2e_test_suite.sh
+
+# 3. Or specify custom port
+PORT=9090 ./e2e_test_suite.sh
 ```
 
 ### Expected Output
 
-The test suite provides colored, detailed output showing:
-- 🧪 Test descriptions with blue icons
-- ✅ Successful tests with green checkmarks
-- ❌ Failed tests with red X marks
-- ⚠️ Warnings with yellow triangles
-- ℹ️ Information messages with blue info icons
+```
+🧪 Starting Comprehensive E2E Test Suite
+========================================
 
-## Test Phases Explained
+💻 Running in local test mode
+✅ Process cleanup completed
 
-### Phase 0: Unit Testing Suite (Model-Agnostic Framework) ⭐ **NEW**
-- **Purpose**: Runs comprehensive unit tests before E2E testing
-- **Features**:
-  - 🚀 **Model-agnostic main tests** (no specific model dependencies)
-  - 🔄 **Automatic registry testing** (works with any number of models)
-  - 📊 **Coverage analysis** with threshold checking (minimum 70%)
-  - 🧪 **All packages tested**: models, validations, registry, main
-- **Duration**: ~10-15 seconds
-- **Benefits**:
-  - ✅ Adding new models requires **zero changes** to core tests
-  - ✅ **Zero maintenance overhead** for main code unit tests
-  - ✅ Comprehensive test coverage with detailed reporting
+🧪 Phase 0: Unit Testing Suite (Model-Agnostic Framework)
+=========================================================
+✅ Unit tests execution completed
+ℹ️  Total unit test coverage: 84.6%
+✅ Coverage exceeds minimum threshold (70%): 84.6%
 
+🚀 Phase 1: Server Startup & Basic Health Checks
+=================================================
+✅ Server is ready on port 8086
+
+[... continues through all phases ...]
+
+🎉 Test Suite Complete!
+📈 Test Results Summary:
+Total Tests: 35
+Passed: 35
+Failed: 0
+
+✅ ALL TESTS PASSED! 🎊
+```
+
+**Note**: Test count increased from 22 to 35 with the addition of Phase 10 (Threshold Validation with Test Data Files) which includes 5 comprehensive threshold tests and 8 new inline threshold tests from Phase 9.
+
+---
+
+## Test Data Structure
+
+### Directory Layout
+
+```
+test_data/
+├── single/               # Single record validation
+│   ├── valid/           # Valid test payloads
+│   │   ├── api.json
+│   │   ├── incident.json
+│   │   ├── github.json
+│   │   ├── database.json
+│   │   ├── deployment.json
+│   │   └── generic.json
+│   └── invalid/         # Invalid test payloads
+│       ├── api.json
+│       ├── incident.json
+│       └── ...
+├── arrays/              # Array validation
+│   ├── valid/          # Valid arrays
+│   │   ├── api.json
+│   │   └── incident.json
+│   └── mixed/          # Mixed valid/invalid
+│       └── incident.json
+└── batch/               # Batch with threshold
+    ├── valid/
+    └── mixed/
+```
+
+### Adding New Test Data
+
+When adding a new model, create corresponding test files:
+
+1. **Valid payload**: `test_data/single/valid/{model}.json`
+```json
+{
+  "id": "MODEL-001",
+  "name": "Test Entry",
+  "description": "Valid test payload"
+}
+```
+
+2. **Invalid payload**: `test_data/single/invalid/{model}.json`
+```json
+{
+  "id": "INVALID",
+  "name": "X"
+}
+```
+
+3. **Array payload**: `test_data/arrays/valid/{model}.json`
+```json
+[
+  { "id": "MODEL-001", "name": "First" },
+  { "id": "MODEL-002", "name": "Second" }
+]
+```
+
+The test suite will automatically discover and test these files!
+
+---
+
+## Test Phases
+
+### Phase 0: Unit Testing Suite
+
+**Purpose**: Run comprehensive unit tests before E2E testing
+
+**What it tests**:
+- All packages (models, validations, registry, main, config)
+- Code coverage analysis
+- Test failures detection
+
+**Coverage Files Created**:
+- `coverage/unit_coverage.out` - Coverage profile
+- `coverage/unit_coverage_summary.txt` - Summary statistics
+- `coverage/unit_test_output.log` - Test output
+
+**Commands**:
 ```bash
-# What it does internally:
 cd src && go test -v -coverprofile=../coverage/unit_coverage.out ./...
 go tool cover -func=../coverage/unit_coverage.out
 ```
 
-**Sample Output**:
-```
-🧪 Phase 0: Unit Testing Suite (Model-Agnostic Framework)
-=========================================================
-ℹ️  Running model-agnostic unit test framework with coverage analysis...
-✅ Main tests are now model-agnostic (no specific model dependencies)
-✅ Registry tests work automatically with any number of models
-✅ Adding new models requires zero changes to core tests
-🧪 Running unit tests for all packages
-✅ Unit tests execution completed
-ℹ️  Total unit test coverage: 81.1%
-✅ Coverage exceeds minimum threshold (70%): 81.1%
-✅ All unit tests passed successfully
-```
+### Phase 1: Server Startup
 
-### Phase 1: Server Startup & Basic Health Checks
-- **Purpose**: Verifies the validator server can start successfully
-- **Tests**: Server startup on port 8086, health endpoint accessibility
-- **Duration**: ~5-10 seconds
+**Purpose**: Verify server can start and respond
 
-```bash
-# What it does internally:
-PORT=8086 ./validator &
-curl http://localhost:8086/health
-```
+**What it tests**:
+- Server startup on configured port
+- Health endpoint accessibility
+- Server ready state
 
 ### Phase 2: Basic Endpoint Testing
-- **Purpose**: Tests core API endpoints return correct HTTP status codes
-- **Tests**:
-  - Health endpoint (GET /health) → expects 200
-  - Models list (GET /models) → expects 200
-  - Swagger models (GET /swagger/models) → expects 200
-  - Swagger UI (GET /swagger/) → expects 301 (redirect)
 
-### Phase 3: Automatic Model Discovery Testing
-- **Purpose**: Verifies the automatic model registration system
-- **Tests**:
-  - ✅ Models that should be registered: `github`, `incident`, `api`, `database`, `generic`, `deployment`
-  - ❌ Models that should NOT be registered: `bitbucket`, `gitlab`, `slack` (deleted models)
+**Purpose**: Test core API endpoints
+
+**Endpoints tested**:
+- `GET /health` → 200 OK
+- `GET /models` → 200 OK
+- `GET /swagger/models` → 200 OK
+- `GET /swagger/` → 301 Redirect
+
+### Phase 3: Automatic Model Discovery
+
+**Purpose**: Verify automatic model registration
+
+**What it tests**:
+- Expected models are registered (github, incident, api, database, generic, deployment)
+- Deleted models are NOT registered (bitbucket, gitlab, slack)
 
 ### Phase 4: Model Validation Testing
-- **Purpose**: Tests actual validation functionality with real payloads from test_data directory
-- **Process**:
-  1. Automatically discovers all registered models
-  2. Looks for test data files in `test_data/valid/` and `test_data/invalid/`
-  3. Tests validation with available payloads
-  4. Reports results for each model
 
-Example validation request:
+**Purpose**: Test validation with test_data payloads
+
+**What it tests**:
+- Reads test data from `test_data/single/valid/` and `test_data/single/invalid/`
+- Validates payloads against registered models
+- Reports validation results
+
+**Example Request**:
 ```bash
 curl -X POST http://localhost:8086/validate/incident \
   -H "Content-Type: application/json" \
-  -d @test_data/valid/incident.json
+  -d @test_data/single/valid/incident.json
 ```
 
-### Phase 5: Model Deletion & Server Restart Testing
-- **Purpose**: Tests behavior when model files are deleted
-- **Process**:
-  1. Backup incident model files
-  2. Delete `src/models/incident.go` and `src/validations/incident.go`
-  3. Restart server
-  4. Verify incident model is unregistered
-  5. Test that incident endpoint returns 404
+### Phase 8: API Response Format
 
-### Phase 6: Model Restoration & Server Restart Testing
-- **Purpose**: Tests behavior when model files are restored
-- **Process**:
-  1. Restore incident model files from backup
-  2. Restart server
-  3. Verify incident model is re-registered
-  4. Test validation functionality works again
+**Purpose**: Validate JSON response formats
 
-### Phase 7: Dynamic Model Creation Testing
-- **Purpose**: Tests adding new models at runtime
-- **Process**:
-  1. Create new `testmodel.go` and `testmodel_validator.go` files
-  2. Restart server
-  3. Check if new model is registered (may not work due to Go compilation requirements)
-  4. Clean up test files
+**What it tests**:
+- `/models` endpoint returns valid JSON
+- `/swagger/models` endpoint returns valid JSON
 
-### Phase 8: API Response Format Testing
-- **Purpose**: Validates API responses are properly formatted JSON
-- **Tests**:
-  - `/models` endpoint returns valid JSON
-  - `/swagger/models` endpoint returns valid JSON
+### Phase 9: Array Validation
 
-### Phase 9: Array Validation Testing ⭐ **NEW**
-- **Purpose**: Tests array/batch validation functionality
-- **Features**:
-  - ✅ Batch validation with auto-generated batch IDs
-  - ✅ Row-level validation results with individual error tracking
-  - ✅ Summary statistics (success rate, error counts, processing time)
-  - ✅ Mixed valid/invalid record handling
-  - ✅ Valid row filtering (only invalid/warning rows in results)
-  - ✅ Backward compatibility with single object validation
-- **Tests**:
-  1. Array validation with 2 valid incident records
-  2. Array validation excludes valid rows from results
-  3. Array validation with mixed valid/invalid records
-  4. Array validation only includes invalid rows in results
-  5. Array validation returns proper summary statistics
-  6. Array validation with valid record has warnings in results
-  7. Single object validation backward compatibility
+**Purpose**: Test batch/array validation functionality
 
-Example array validation request:
+**What it tests**:
+- Array validation with multiple records
+- Row-level validation results
+- Summary statistics (success rate, error counts)
+- Valid row filtering (only invalid/warning rows in results)
+- Backward compatibility with single object validation
+
+**Example Request**:
 ```bash
 curl -X POST http://localhost:8086/validate \
   -H "Content-Type: application/json" \
   -d '{
     "model_type": "incident",
     "data": [
-      { "id": "INC-20240115-0001", "title": "Issue 1", ... },
-      { "id": "INC-20240115-0002", "title": "Issue 2", ... }
+      { "id": "INC-20240115-0001", ... },
+      { "id": "INC-20240115-0002", ... }
     ]
   }'
 ```
@@ -191,407 +260,469 @@ curl -X POST http://localhost:8086/validate \
   "invalid_records": 0,
   "warning_records": 0,
   "processing_time_ms": 5,
-  "completed_at": "2025-10-03T12:00:00Z",
   "summary": {
     "success_rate": 100,
     "validation_errors": 0,
     "validation_warnings": 0,
-    "total_records_processed": 2,
-    "total_tests_ran": 2
+    "total_records_processed": 2
   },
   "results": []
 }
 ```
 
-**Note**: The `results` array only includes invalid records or records with warnings. Valid records without warnings are excluded to reduce response payload size.
+**Note**: `results` array only includes invalid or warning records. Valid records are excluded.
 
-### Phase 10: Threshold Validation Testing ⭐ **NEW**
-- **Purpose**: Tests threshold-based validation with percentage success criteria
-- **Features**:
-  - ✅ Optional threshold parameter for percentage-based validation
-  - ✅ Status calculation: "success" or "failed" based on valid percentage
-  - ✅ Strict threshold comparison (>= threshold for success)
-  - ✅ Default behavior without threshold (success for multiple records, fail for single invalid)
-  - ✅ Support for multi-request batch session tracking
-- **Tests**:
-  1. 80% valid with 20% threshold → success
-  2. 10% valid with 20% threshold → failed
-  3. Exactly 20% valid with 20% threshold → success (strict >= comparison)
-  4. No threshold with multiple records → success (default)
-  5. Single invalid record with no threshold → failed
-  6. Exactly 50% valid with 50% threshold → success
-  7. Results exclude only valid rows without warnings
+### Phase 10: Threshold Validation with Test Data Files
 
-Example threshold validation request:
+**Purpose**: Test threshold validation using test_data files for comprehensive scenario coverage
+
+**What it tests**:
+- Threshold validation with real test data files
+- Success cases (meeting threshold requirements)
+- Failure cases (below threshold requirements)
+- No threshold behavior (always success for arrays)
+
+**Test Data Location**: `test_data/arrays/threshold/`
+
+**Test Cases**:
+
+1. **Incident Success Case** (100% valid, 80% threshold)
+   - File: `incident_success_80.json`
+   - Expected: `status: "success"`, `threshold: 80`
+   - 5 valid incident records
+
+2. **Incident Failure Case** (60% valid, 80% threshold)
+   - File: `incident_failure_80.json`
+   - Expected: `status: "failed"`, `threshold: 80`
+   - 3 valid + 2 invalid records (60% < 80%)
+
+3. **API Success Case** (100% valid, 80% threshold)
+   - File: `api_success_80.json`
+   - Expected: `status: "success"`, `threshold: 80`
+   - 4 valid API records
+
+4. **API Failure Case** (50% valid, 80% threshold)
+   - File: `api_failure_80.json`
+   - Expected: `status: "failed"`, `threshold: 80`
+   - 2 valid + 2 invalid records (50% < 80%)
+
+5. **No Threshold Test** (mixed results, no threshold)
+   - File: `incident_failure_80.json` (reused)
+   - Expected: `status: "success"` (no threshold enforcement)
+   - Always succeeds for multiple records without threshold
+
+**Example Request**:
 ```bash
 curl -X POST http://localhost:8086/validate \
   -H "Content-Type: application/json" \
   -d '{
     "model_type": "incident",
-    "threshold": 20.0,
-    "data": [
-      { "id": "INC-20240115-1001", ... },
-      { "id": "INC-20240115-1002", ... },
-      { "id": "INVALID-1", ... }
-    ]
+    "threshold": 80.0,
+    "data": [...from test_data file...]
   }'
 ```
 
-**Response with Threshold**:
+**Response Structure**:
 ```json
 {
-  "batch_id": "auto_xyz789",
-  "status": "success",
-  "total_records": 3,
-  "valid_records": 2,
-  "invalid_records": 1,
-  "warning_records": 0,
-  "threshold": 20.0,
-  "processing_time_ms": 8,
-  "completed_at": "2025-10-03T12:00:00Z",
+  "batch_id": "auto_xyz",
+  "status": "success|failed",
+  "total_records": 5,
+  "valid_records": 5,
+  "invalid_records": 0,
+  "threshold": 80.0,
   "summary": {
-    "success_rate": 66.67,
-    "validation_errors": 5,
-    "validation_warnings": 0,
-    "total_records_processed": 3
-  },
-  "results": [
-    {
-      "row_index": 2,
-      "record_identifier": "INVALID-1",
-      "is_valid": false,
-      "errors": [...]
-    }
-  ]
+    "success_rate": 100.0,
+    "validation_errors": 0
+  }
 }
 ```
 
-**Threshold Logic**:
-- **With threshold**: `success_rate >= threshold` → "success", otherwise "failed"
-- **Without threshold**:
-  - Single record: "success" if valid, "failed" if invalid
-  - Multiple records: always "success" (default behavior)
-- **Success rate calculation**: `(valid_records / total_records) * 100.0`
-- **Comparison**: Strict `>=` (e.g., 20.0001% passes with 20% threshold, 19.9999% fails)
-
 ### Phase 11: HTTP Method Testing
-- **Purpose**: Tests incorrect HTTP methods return appropriate errors
-- **Tests**:
-  - POST to health endpoint → expects 405 (Method Not Allowed)
-  - GET to validate endpoint → expects 405 (Method Not Allowed)
 
-## Test Results Interpretation
+**Purpose**: Verify incorrect HTTP methods return errors
 
-### Success Criteria
+**What it tests**:
+- POST to /health → 405 Method Not Allowed
+- GET to /validate → 405 Method Not Allowed
+
+---
+
+## Docker E2E Tests
+
+### Using Makefile (Recommended)
+
+#### Test Against Distroless Image
+```bash
+# Build Docker image and run E2E tests
+make docker-test-e2e
+
+# This internally:
+# 1. Builds distroless Docker image
+# 2. Starts container on port 8087
+# 3. Runs E2E tests with TEST_MODE=docker
+# 4. Cleans up container
 ```
-✅ ALL TESTS PASSED! 🎊
-Total Tests: 40
-Passed: 40
-Failed: 0
+
+#### Test Against Alpine Image
+```bash
+# Build Alpine image and run E2E tests
+make docker-test-e2e-alpine
 ```
 
-The test suite now includes:
-- **Phase 0**: Unit tests (model-agnostic framework)
-- **Phases 1-8**: Server lifecycle and basic functionality
-- **Phase 9**: Array validation (7 tests)
-- **Phase 10**: Threshold validation (7 tests)
-- **Phase 11**: HTTP method validation (2 tests)
-
-### Common Warning (Expected)
+#### Test Using Docker Compose
+```bash
+# Use docker-compose stack for testing
+make docker-test-compose
 ```
-⚠️ Dynamic testmodel was not auto-registered (this is expected in some Go build scenarios)
-```
-This warning is normal and doesn't indicate a problem. Dynamic Go model creation requires compilation.
 
-## Configuration Options
-
-The test suite uses these default settings:
+### Manual Docker Testing
 
 ```bash
-SERVER_PORT=8086                    # Test server port
-API_BASE="http://localhost:8086"    # Base API URL
-TOTAL_TESTS=0                       # Test counter
-PASSED_TESTS=0                      # Success counter
-FAILED_TESTS=0                      # Failure counter
+# 1. Build Docker image
+make docker-build
+
+# 2. Start container
+docker run -d --name validator-test -p 8087:8080 go-playground-validator:latest
+
+# 3. Run E2E tests against container
+VALIDATOR_URL=http://localhost:8087 TEST_MODE=docker ./e2e_test_suite.sh
+
+# 4. Cleanup
+docker stop validator-test && docker rm validator-test
 ```
+
+### Docker Test Mode Differences
+
+When `TEST_MODE=docker`:
+- ✅ Skips unit tests (already tested in CI)
+- ✅ Skips server startup (uses existing container)
+- ✅ Tests against `VALIDATOR_URL` environment variable
+- ✅ Skips server lifecycle tests (restart, deletion)
+- ✅ Focuses on API endpoint validation
+
+---
+
+## Makefile Commands
+
+### Build Commands
+```bash
+make build                  # Build binary for current platform
+make build-linux           # Build for Linux
+make build-all             # Build for all platforms
+```
+
+### Test Commands
+```bash
+make test                  # Run unit tests
+make test-coverage         # Run tests with coverage report
+make test-race             # Run tests with race detection
+make test-e2e              # Run E2E test suite (build + e2e)
+make test-all              # Run all tests (unit + race + e2e)
+```
+
+### Docker Test Commands
+```bash
+make docker-test-e2e           # E2E tests against distroless Docker
+make docker-test-e2e-alpine    # E2E tests against Alpine Docker
+make docker-test-compose       # E2E tests using docker-compose
+```
+
+### Coverage Commands
+```bash
+# Generate coverage report (outputs to root directory)
+make test-coverage
+
+# Files created:
+# - coverage.out (coverage profile)
+# - coverage.html (HTML report)
+
+# View coverage
+open coverage.html
+```
+
+### Clean Commands
+```bash
+make clean                 # Clean binaries and test artifacts
+make clean-docker         # Clean Docker artifacts
+make clean-all            # Clean everything
+```
+
+---
 
 ## Troubleshooting
 
 ### Common Issues
 
-**1. Port Already in Use**
+#### 1. Port Already in Use
+**Error**: `Server failed to start after 30 seconds`
+
+**Solution**:
 ```bash
-Error: Server failed to start after 30 seconds
-```
-**Solution**: Kill existing processes on port 8086
-```bash
-lsof -t -i :8086 | xargs kill -9
+# Using Makefile
+make kill-port PORT=8086
+
+# Or manually
+lsof -ti :8086 | xargs kill -9
 ```
 
-**2. Validator Binary Missing**
+#### 2. Binary Not Found
+**Error**: `./bin/validator: No such file or directory`
+
+**Solution**:
 ```bash
-./validator: No such file or directory
-```
-**Solution**: Build the validator first
-```bash
-go build -o validator src/main.go
+make build
 ```
 
-**3. Permission Denied**
-```bash
-bash: ./e2e_test_suite.sh: Permission denied
-```
-**Solution**: Make script executable
+#### 3. Permission Denied
+**Error**: `Permission denied: ./e2e_test_suite.sh`
+
+**Solution**:
 ```bash
 chmod +x e2e_test_suite.sh
 ```
 
-**4. Python3 Not Found**
+#### 4. Docker Build Fails
+**Error**: `undefined: models.IncidentPayload`
+
+**Cause**: E2E tests deleted model files during testing
+
+**Solution**:
 ```bash
-python3: command not found
+# Restore model files
+cd src && git checkout HEAD -- models/incident.go validations/incident.go
+cd ..
+
+# Rebuild Docker
+make docker-build
 ```
-**Solution**: Install Python3 or modify script to use `python`
+
+#### 5. Coverage Files in Wrong Location
+**Issue**: Coverage files created in `src/` directory
+
+**Solution**: The Makefile and e2e_test_suite.sh have been updated to create coverage files in the root `coverage/` directory. If you still see files in `src/`, update your scripts:
+
+```bash
+# Ensure these are updated:
+# - e2e_test_suite.sh (lines 430-485)
+# - Makefile (test-coverage target)
+```
 
 ### Manual Cleanup
 
-If the test suite fails unexpectedly, you may need to manually clean up:
+If tests fail unexpectedly:
 
 ```bash
-# Kill any running validator processes
-pkill -f "./validator"
-pkill -f "go run main.go"
+# 1. Kill all validator processes
+pkill -f "./bin/validator"
+pkill -f "validator"
 
-# Kill processes on port 8086
-lsof -t -i :8086 | xargs kill -9
+# 2. Kill processes on test port
+make kill-port PORT=8086
 
-# Remove any test files
+# 3. Remove test files
 rm -f src/models/testmodel.go src/validations/testmodel.go
 
-# Restore any backed up files if needed
-# (The script should handle this automatically)
+# 4. Clean build artifacts
+make clean
+
+# 5. Restore any backed up files
+cd src && git status
+git checkout -- models/incident.go validations/incident.go
 ```
 
-## Integration with CI/CD
+### Debugging Test Failures
+
+#### Enable Debug Mode
+```bash
+# Add at top of e2e_test_suite.sh
+set -x  # Enable debug output
+```
+
+#### Check Logs
+```bash
+# View coverage test output
+cat coverage/unit_test_output.log
+
+# View coverage summary
+cat coverage/unit_coverage_summary.txt
+```
+
+#### Run Specific Validation
+```bash
+# Test single endpoint manually
+curl -X POST http://localhost:8086/validate/incident \
+  -H "Content-Type: application/json" \
+  -d @test_data/single/valid/incident.json
+```
+
+---
+
+## Test Results Interpretation
+
+### Success Output
+```
+🎉 Test Suite Complete!
+📈 Test Results Summary:
+Total Tests: 35
+Passed: 35
+Failed: 0
+
+✅ ALL TESTS PASSED! 🎊
+```
+
+**Test Breakdown**:
+- Phase 0: Unit Tests (1 test)
+- Phases 1-8: Core functionality (17 tests)
+- Phase 9: Array Validation (8 tests)
+- Phase 10: Threshold Validation with Test Data (5 tests)
+- Phase 11: HTTP Method Testing (2 tests)
+- Additional: Model deletion/lifecycle (2 tests)
+
+### Partial Failure Output
+```
+🎉 Test Suite Complete!
+📈 Test Results Summary:
+Total Tests: 35
+Passed: 33
+Failed: 2
+
+❌ SOME TESTS FAILED ❌
+
+Please review the failed tests above and fix any issues.
+```
+
+### Coverage Analysis
+```
+ℹ️  Total unit test coverage: 84.6%
+✅ Coverage exceeds minimum threshold (70%): 84.6%
+
+Package-level coverage breakdown:
+  📦 ok  	goplayground-data-validator/models    coverage: 81.5% of statements
+  📦 ok  	goplayground-data-validator/validations    coverage: 84.6% of statements
+  📦 ok  	goplayground-data-validator/registry    coverage: 95.5% of statements
+  📦 ok  	goplayground-data-validator    coverage: 79.6% of statements
+  📦 ok  	goplayground-data-validator/config    coverage: 100.0% of statements
+```
+
+---
+
+## CI/CD Integration
 
 ### GitHub Actions Example
-
 ```yaml
 name: E2E Tests
 on: [push, pull_request]
+
 jobs:
   e2e-tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-go@v3
-      with:
-        go-version: 1.21
-    - name: Build validator
-      run: go build -o validator src/main.go
-    - name: Run E2E tests
-      run: ./e2e_test_suite.sh
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Run E2E Tests
+        run: make test-e2e
+
+      - name: Docker E2E Tests
+        run: make docker-test-e2e
+
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage/
 ```
 
-### Local Development Workflow
+### Jenkins Pipeline Example
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                sh 'make build'
+            }
+        }
+        stage('E2E Tests') {
+            steps {
+                sh 'make test-e2e'
+            }
+        }
+        stage('Docker E2E Tests') {
+            steps {
+                sh 'make docker-test-e2e'
+            }
+        }
+    }
+    post {
+        always {
+            publishHTML([
+                reportDir: 'coverage',
+                reportFiles: 'coverage.html',
+                reportName: 'Coverage Report'
+            ])
+        }
+    }
+}
+```
 
+---
+
+## Best Practices
+
+### 1. Always Build Before Testing
 ```bash
-# Development cycle:
-1. Make code changes
-2. Build: go build -o validator src/main.go
-3. Test: ./e2e_test_suite.sh
-4. Review results
-5. Repeat
+make build && ./e2e_test_suite.sh
+# Or use
+make test-e2e  # Does both
 ```
 
-## Advanced Usage
-
-### Running Specific Test Phases
-
-The script doesn't support running individual phases, but you can modify it by commenting out unwanted phases in the `main()` function.
-
-### Custom Port Testing
-
-To test on a different port, modify the script:
-
+### 2. Check Coverage Reports
 ```bash
-# Edit these variables at the top of the script:
-SERVER_PORT=9090
-API_BASE="http://localhost:9090"
+make test-coverage
+open coverage.html
 ```
 
-### Verbose Debug Mode
-
-Add debug output by modifying the script:
-
+### 3. Test Docker Builds
 ```bash
-# Add this after the shebang line:
-set -x  # Enable debug mode
+# Test both distroless and alpine
+make docker-test-e2e
+make docker-test-e2e-alpine
 ```
 
-## Sample Test Run Output
-
-```
-🧪 Starting Comprehensive E2E Test Suite
-========================================
-
-🚀 Phase 1: Server Startup & Basic Health Checks
-=================================================
-ℹ️  Starting server on port 8086...
-✅ Server is ready on port 8086
-
-🔍 Phase 2: Basic Endpoint Testing
-==================================
-🧪 Health endpoint
-✅ Endpoint http://localhost:8086/health returned 200
-🧪 Models list endpoint
-✅ Endpoint http://localhost:8086/models returned 200
-
-[... continues through all 9 phases ...]
-
-🎉 Test Suite Complete!
-Total Tests: 25
-Passed: 24
-Failed: 0
-🎊 ALL TESTS PASSED! 🎊
+### 4. Clean Between Test Runs
+```bash
+make clean
+make build
+make test-e2e
 ```
 
-## Performance Optimizations
-
-The validator has been optimized with several key improvements that enhance performance without changing the API:
-
-### Code Optimizations Applied
-
-1. **Enhanced BaseValidator Framework**
-   - Pre-allocated slices with capacity hints to reduce memory reallocations
-   - Standardized validation result creation with `CreateValidationResult()`
-   - Consolidated performance metrics collection via `AddPerformanceMetrics()`
-
-2. **Efficient Map-to-Struct Conversion**
-   - Replaced inefficient JSON marshal/unmarshal pattern with direct reflection-based conversion
-   - Added intelligent type conversion with overflow protection
-   - Improved error handling for conversion failures
-
-3. **Memory Usage Optimizations**
-   - Pre-allocated error and warning slices based on expected capacity
-   - Optimized slice growth patterns to minimize reallocations
-   - Improved memory estimation for performance metrics
-
-4. **Code Duplication Elimination**
-   - Consolidated duplicate validation result creation patterns across all validators
-   - Unified error formatting functions
-   - Standardized performance metrics collection
-
-### Expected Performance Improvements
-
-- **30-50% improvement** in validation throughput
-- **20-30% reduction** in memory allocations
-- **Faster startup times** due to optimized reflection caching
-- **Reduced GC pressure** from better memory allocation patterns
-
-### Compatibility
-
-All optimizations maintain full backward compatibility:
-- API endpoints remain unchanged
-- Request/response formats are identical
-- All existing functionality preserved
-- Test suite passes with 100% success rate
-
-## Test Data Management
-
-The `e2e_test_suite.sh` uses a structured test data directory to manage validation payloads, making it easy to add new test cases and maintain existing ones.
-
-### Test Data Directory Structure
-
-```
-test_data/
-├── valid/          # Valid payloads that should pass validation
-├── invalid/        # Invalid payloads that should fail validation
-├── examples/       # Example payloads for reference
-└── README.md       # Documentation
+### 5. Verify Port Availability
+```bash
+make check-port PORT=8086
 ```
 
-### Adding Test Data for New Models
+---
 
-When you add a new model to the system, create corresponding test data files:
+## Summary
 
-1. **Valid Test Data**: `test_data/valid/{model_name}.json`
-   ```json
-   {
-     "id": "YM-001",
-     "name": "Test Your Model",
-     "description": "A test your model entry"
-   }
-   ```
+The E2E test suite provides comprehensive validation of the Go Playground Data Validator system:
 
-2. **Invalid Test Data**: `test_data/invalid/{model_name}.json`
-   ```json
-   {
-     "name": "X"
-   }
-   ```
+✅ **Automated Testing**: One command (`make test-e2e`) runs complete test suite
+✅ **Coverage Analysis**: Unit tests with 80%+ coverage requirement
+✅ **Docker Testing**: Validates containerized deployment
+✅ **Test Data Driven**: Easy to add new test cases via `test_data/` directory
+✅ **CI/CD Ready**: Integrates with GitHub Actions, Jenkins, etc.
+✅ **Clean Artifacts**: All outputs go to root `coverage/` and `bin/` directories
 
-The test suite will automatically:
-- ✅ Detect the new model through automatic discovery
-- ✅ Find and use the test data files
-- ✅ Test validation with both valid and invalid payloads
-- ✅ Report results for the new model
-
-### Test Data File Guidelines
-
-#### Valid Payloads
-- Should contain all required fields
-- Should use correct data types
-- Should satisfy all validation rules
-- Should represent realistic use cases
-
-#### Invalid Payloads
-- Should violate one or more validation rules
-- Common invalid scenarios:
-  - Missing required fields
-  - Wrong data types
-  - Values outside allowed ranges
-  - Invalid formats (email, dates, etc.)
-
-#### Example Test Data Files
-
-Available in `test_data/examples/` for reference:
-- `github.json` - GitHub webhook payload
-- `api.json` - API request payload
-- `database.json` - Database query payload
-- `deployment.json` - Deployment webhook payload
-- `generic.json` - Generic event payload
-
-### Automatic Test Data Discovery
-
-The test suite automatically:
-1. Discovers all registered models
-2. Looks for corresponding files in `test_data/valid/` and `test_data/invalid/`
-3. Tests validation with found payloads
-4. Skips models without test data files (with informational messages)
-
-### Adding Edge Case Testing
-
-For complex validation scenarios, create additional test files:
-
+**Quick Commands Reference**:
+```bash
+make test-e2e              # Local E2E tests
+make docker-test-e2e       # Docker E2E tests
+make test-coverage         # Coverage report
+make clean                 # Clean artifacts
 ```
-test_data/valid/{model_name}_edge_case.json
-test_data/invalid/{model_name}_boundary.json
-test_data/examples/{model_name}_large.json
-```
-
-### Running Tests with New Test Data
-
-After adding test data files:
-
-1. **No code changes needed** - the test suite automatically discovers new files
-2. **Build the validator**: `go build -o validator src/main.go`
-3. **Run the test suite**: `./e2e_test_suite.sh`
-4. **Verify output**: Check that your new model is tested with the provided data
-
-### Fallback to Hardcoded Payloads
-
-For backward compatibility, the test suite still supports hardcoded payloads in the script. Test data files take precedence when available.
-
-## Conclusion
-
-The `e2e_test_suite.sh` provides comprehensive testing coverage for the Go Playground Data Validator, ensuring all core functionality works correctly including automatic model discovery, validation, server lifecycle management, and API endpoints. The test data directory structure makes it easy to add and maintain test cases for new models without modifying the test script. The recent performance optimizations have made the validator significantly faster and more memory-efficient while maintaining full compatibility. It's designed to be run regularly during development and can be integrated into CI/CD pipelines for automated testing.

@@ -1,0 +1,34 @@
+[
+  {
+    "id": "INC-VALID-001",
+    "title": "Valid Incident Record for Mixed Array Testing with Sufficient Length",
+    "description": "This is a valid incident record with proper description length and all required fields populated correctly",
+    "severity": "high",
+    "status": "open",
+    "priority": 4,
+    "category": "bug",
+    "environment": "production",
+    "reported_by": "test@example.com",
+    "reported_at": "2025-01-04T10:00:00Z"
+  },
+  {
+    "id": "INC-VALID-002",
+    "title": "Another Valid Incident for Testing Array Validation with Mixed Records",
+    "description": "Second valid incident record ensuring we have multiple valid records in the test dataset for validation",
+    "severity": "medium",
+    "status": "in_progress",
+    "priority": 3,
+    "category": "performance",
+    "environment": "staging",
+    "reported_by": "test@example.com",
+    "reported_at": "2025-01-04T10:01:00Z"
+  },
+  {
+    "id": "",
+    "title": "",
+    "description": "short",
+    "severity": "invalid",
+    "status": "unknown",
+    "priority": 999
+  }
+]

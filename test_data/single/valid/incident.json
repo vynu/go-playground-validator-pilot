@@ -1,0 +1,14 @@
+{
+  "id": "INC-20250104-001",
+  "title": "Production Database Connection Failure - Urgent Investigation Required",
+  "description": "Critical database connection failure affecting all production services in US-EAST-1 region requiring immediate attention",
+  "severity": "critical",
+  "status": "open",
+  "priority": 5,
+  "category": "bug",
+  "environment": "production",
+  "reported_by": "ops@example.com",
+  "reported_at": "2025-01-04T10:00:00Z",
+  "assignee": "john.doe@example.com",
+  "created_at": "2025-01-04T10:00:00Z"
+}

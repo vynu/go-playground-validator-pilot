@@ -255,6 +255,37 @@ func (bsm *BatchSessionManager) DeleteBatchSession(batchID string) {
 	delete(bsm.sessions, batchID)
 }
 
+// CleanupExpiredBatches removes batch sessions older than 30 minutes
+func (bsm *BatchSessionManager) CleanupExpiredBatches() {
+	bsm.mutex.Lock()
+	defer bsm.mutex.Unlock()
+
+	now := time.Now()
+	expirationDuration := 30 * time.Minute
+
+	for batchID, session := range bsm.sessions {
+		session.mutex.RLock()
+		age := now.Sub(session.LastUpdated)
+		session.mutex.RUnlock()
+
+		if age > expirationDuration {
+			delete(bsm.sessions, batchID)
+		}
+	}
+}
+
+// StartCleanupRoutine starts a background goroutine to cleanup expired batches
+func (bsm *BatchSessionManager) StartCleanupRoutine() {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute) // Check every 5 minutes
+		defer ticker.Stop()
+
+		for range ticker.C {
+			bsm.CleanupExpiredBatches()
+		}
+	}()
+}
+
 // GetBatchStatus returns current status of batch session
 func (bs *BatchSession) GetStatus() map[string]interface{} {
 	bs.mutex.RLock()

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	httpswagger "github.com/swaggo/http-swagger"
+	"goplayground-data-validator/models"
 	"goplayground-data-validator/registry"
 )
 
@@ -50,6 +51,11 @@ func startModularServer() {
 	mux.HandleFunc("POST /validate", handleGenericValidation) // Generic validation with model type
 	mux.HandleFunc("GET /models", handleListModels)           // List available models
 
+	// Register batch management endpoints (Phase 2)
+	mux.HandleFunc("POST /validate/batch/start", handleBatchStart)            // Start new batch session
+	mux.HandleFunc("GET /validate/batch/{id}", handleBatchStatus)             // Get batch status
+	mux.HandleFunc("POST /validate/batch/{id}/complete", handleBatchComplete) // Complete batch validation
+
 	// Register Swagger documentation endpoints
 	mux.Handle("/swagger/", httpswagger.WrapHandler)           // Swagger UI
 	mux.HandleFunc("GET /swagger/doc.json", handleSwaggerJSON) // Swagger JSON spec
@@ -68,6 +74,11 @@ func startModularServer() {
 
 	// Allow some time for initial model scanning
 	time.Sleep(1 * time.Second)
+
+	// Start batch session cleanup routine (Phase 2)
+	batchManager := models.GetBatchSessionManager()
+	batchManager.StartCleanupRoutine()
+	log.Println("🧹 Batch session cleanup routine started (30min expiration)")
 
 	// Create optimized HTTP server
 	server := &http.Server{
@@ -144,9 +155,90 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Phase 2: Check for batch headers
+	batchID := r.Header.Get("X-Batch-ID")
+	batchComplete := r.Header.Get("X-Batch-Complete")
+
+	// Handle X-Batch-Complete header (finalize and return results)
+	if batchComplete != "" {
+		batchManager := models.GetBatchSessionManager()
+
+		// Check if batch session exists
+		session, exists := batchManager.GetBatchSession(batchComplete)
+		if !exists {
+			sendJSONError(w, fmt.Sprintf("Batch session '%s' not found", batchComplete), http.StatusNotFound)
+			return
+		}
+
+		status, err := batchManager.FinalizeBatchSession(batchComplete)
+		if err != nil {
+			sendJSONError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if status == "failed" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"batch_id":        session.BatchID,
+			"status":          status,
+			"total_records":   session.TotalRecords,
+			"valid_records":   session.ValidRecords,
+			"invalid_records": session.InvalidRecords,
+			"warning_records": session.WarningRecords,
+			"threshold":       session.Threshold,
+			"started_at":      session.StartedAt,
+			"completed_at":    session.LastUpdated,
+		})
+
+		// Clean up after returning response
+		go func() {
+			time.Sleep(1 * time.Second)
+			batchManager.DeleteBatchSession(batchComplete)
+		}()
+		return
+	}
+
 	// NEW: Detect array vs single object validation
 	if len(request.Data) > 0 {
-		// Array validation path
+		// Check if this is batch accumulation mode
+		if batchID != "" {
+			// Batch accumulation: validate and update batch session
+			batchManager := models.GetBatchSessionManager()
+			_, exists := batchManager.GetBatchSession(batchID)
+			if !exists {
+				sendJSONError(w, fmt.Sprintf("Batch session '%s' not found", batchID), http.StatusNotFound)
+				return
+			}
+
+			// Validate the array
+			result, err := globalRegistry.ValidateArray(modelType, request.Data, request.Threshold)
+			if err != nil {
+				sendJSONError(w, "Array validation failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Update batch session with validation counts
+			batchManager.UpdateBatchSession(batchID, result.ValidRecords, result.InvalidRecords, result.WarningRecords)
+
+			// Get updated session
+			updatedSession, _ := batchManager.GetBatchSession(batchID)
+
+			// Return accumulation status
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"batch_id":      batchID,
+				"status":        "accumulating",
+				"records_count": updatedSession.TotalRecords,
+				"message":       fmt.Sprintf("Added %d records to batch. Use X-Batch-Complete header to finalize.", result.TotalRecords),
+			})
+			return
+		}
+
+		// Normal array validation path (no batch)
 		result, err := globalRegistry.ValidateArray(modelType, request.Data, request.Threshold)
 		if err != nil {
 			sendJSONError(w, "Array validation failed: "+err.Error(), http.StatusInternalServerError)
@@ -951,4 +1043,109 @@ func getSwaggerSpec() map[string]interface{} {
 			},
 		},
 	}
+}
+
+// ============================================================================
+// PHASE 2: Batch Management Handlers
+// ============================================================================
+
+// handleBatchStart starts a new batch session
+func handleBatchStart(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var request struct {
+		ModelType string   `json:"model_type"`
+		JobID     string   `json:"job_id,omitempty"`
+		Threshold *float64 `json:"threshold,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		sendJSONError(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	if request.ModelType == "" {
+		sendJSONError(w, "model_type is required", http.StatusBadRequest)
+		return
+	}
+
+	// Generate batch ID
+	batchID := models.GenerateBatchID(request.JobID)
+
+	// Create batch session
+	batchManager := models.GetBatchSessionManager()
+	session := batchManager.CreateBatchSession(batchID, request.Threshold)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"batch_id":   session.BatchID,
+		"status":     "active",
+		"started_at": session.StartedAt,
+		"expires_at": session.StartedAt.Add(30 * time.Minute), // 30min expiration
+		"threshold":  session.Threshold,
+		"message":    "Batch session created. Use X-Batch-ID header to add data.",
+	})
+}
+
+// handleBatchStatus retrieves the current status of a batch session
+func handleBatchStatus(w http.ResponseWriter, r *http.Request) {
+	batchID := r.PathValue("id")
+	if batchID == "" {
+		sendJSONError(w, "batch ID is required", http.StatusBadRequest)
+		return
+	}
+
+	batchManager := models.GetBatchSessionManager()
+	session, exists := batchManager.GetBatchSession(batchID)
+	if !exists {
+		sendJSONError(w, fmt.Sprintf("Batch session '%s' not found", batchID), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(session.GetStatus())
+}
+
+// handleBatchComplete finalizes a batch session and returns validation results
+func handleBatchComplete(w http.ResponseWriter, r *http.Request) {
+	batchID := r.PathValue("id")
+	if batchID == "" {
+		sendJSONError(w, "batch ID is required", http.StatusBadRequest)
+		return
+	}
+
+	batchManager := models.GetBatchSessionManager()
+	status, err := batchManager.FinalizeBatchSession(batchID)
+	if err != nil {
+		sendJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	session, _ := batchManager.GetBatchSession(batchID)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// Set status code based on validation result
+	if status == "failed" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"batch_id":        session.BatchID,
+		"status":          status,
+		"total_records":   session.TotalRecords,
+		"valid_records":   session.ValidRecords,
+		"invalid_records": session.InvalidRecords,
+		"warning_records": session.WarningRecords,
+		"threshold":       session.Threshold,
+		"started_at":      session.StartedAt,
+		"completed_at":    session.LastUpdated,
+		"message":         fmt.Sprintf("Batch validation completed with status: %s", status),
+	})
+
+	// Clean up after returning response
+	go func() {
+		time.Sleep(1 * time.Second) // Small delay to ensure response is sent
+		batchManager.DeleteBatchSession(batchID)
+	}()
 }

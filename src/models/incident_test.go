@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -209,14 +210,14 @@ func TestIncidentPayload_JSONMarshaling(t *testing.T) {
 	incident := getValidIncident()
 
 	// Test JSON marshaling
-	data, err := incident.MarshalJSON()
+	data, err := json.Marshal(incident)
 	if err != nil {
 		t.Fatalf("Failed to marshal incident: %v", err)
 	}
 
 	// Test JSON unmarshaling
 	var unmarshaled IncidentPayload
-	err = unmarshaled.UnmarshalJSON(data)
+	err = json.Unmarshal(data, &unmarshaled)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal incident: %v", err)
 	}

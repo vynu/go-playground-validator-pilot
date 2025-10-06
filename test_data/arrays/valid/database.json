@@ -1,0 +1,16 @@
+[
+  {
+    "query": "SELECT * FROM users",
+    "database": "prod_db",
+    "execution_time_ms": 10,
+    "rows_affected": 50,
+    "timestamp": "2025-01-04T10:00:00Z"
+  },
+  {
+    "query": "UPDATE users SET active=true",
+    "database": "prod_db",
+    "execution_time_ms": 30,
+    "rows_affected": 10,
+    "timestamp": "2025-01-04T10:01:00Z"
+  }
+]

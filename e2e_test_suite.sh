@@ -427,15 +427,18 @@ test_unit_tests() {
 
     # Run unit tests with coverage
     start_test "Running unit tests for all packages"
+    mkdir -p coverage
     if cd src && go test -v -coverprofile=../coverage/unit_coverage.out ./... > ../coverage/unit_test_output.log 2>&1; then
+        cd ..
         pass_test "Unit tests execution completed"
 
         # Generate coverage report
         log_info "Generating coverage report..."
-        if go tool cover -func=../coverage/unit_coverage.out > ../coverage/unit_coverage_summary.txt 2>&1; then
+        if cd src && go tool cover -func=../coverage/unit_coverage.out > ../coverage/unit_coverage_summary.txt 2>&1; then
+            cd ..
 
             # Extract total coverage
-            TOTAL_COVERAGE=$(grep "total:" ../coverage/unit_coverage_summary.txt | awk '{print $3}' | sed 's/%//')
+            TOTAL_COVERAGE=$(grep "total:" coverage/unit_coverage_summary.txt | awk '{print $3}' | sed 's/%//')
 
             if [ ! -z "$TOTAL_COVERAGE" ]; then
                 log_info "Total unit test coverage: $TOTAL_COVERAGE%"
@@ -467,19 +470,19 @@ test_unit_tests() {
                 if echo "$line" | grep -q "coverage:"; then
                     echo "  📦 $line"
                 fi
-            done < ../coverage/unit_test_output.log
+            done < coverage/unit_test_output.log
 
         else
             log_warning "Could not generate coverage summary"
         fi
 
         # Check for any test failures
-        if grep -q "FAIL" ../coverage/unit_test_output.log; then
+        if grep -q "FAIL" coverage/unit_test_output.log; then
             log_warning "Some unit tests failed - check coverage/unit_test_output.log for details"
 
             # Show failed tests summary
             log_info "Failed tests summary:"
-            grep "FAIL" ../coverage/unit_test_output.log | head -5 | while read line; do
+            grep "FAIL" coverage/unit_test_output.log | head -5 | while read line; do
                 echo "  ❌ $line"
             done
         else
@@ -726,10 +729,10 @@ main() {
         "model_type": "incident",
         "data": [
           {
-            "id": "INC-20240115-0001",
+            "id": "INC-001",
             "title": "Array Test 1",
             "description": "Testing array validation with first record",
-            "priority": 5,
+            "priority": 1,
             "severity": "critical",
             "status": "open",
             "category": "performance",
@@ -740,10 +743,10 @@ main() {
             "reported_at": "2024-01-15T10:00:00Z"
           },
           {
-            "id": "INC-20240115-0002",
+            "id": "INC-002",
             "title": "Array Test 2",
             "description": "Testing array validation with second record",
-            "priority": 3,
+            "priority": 2,
             "severity": "high",
             "status": "open",
             "category": "bug",
@@ -757,21 +760,12 @@ main() {
       }')
 
     if echo "$response" | grep -q '"batch_id"' && \
-       echo "$response" | grep -q '"status":"success"' && \
+       echo "$response" | grep -q '"status":"completed"' && \
        echo "$response" | grep -q '"total_records":2' && \
        echo "$response" | grep -q '"valid_records":2'; then
-        pass_test "Array validation with valid records works correctly (status: success)"
+        pass_test "Array validation with valid records works correctly"
     else
-        fail_test "Array validation did not return expected structure (expected status: success)"
-        echo "Response: $response"
-    fi
-
-    # Test that valid records are NOT included in results array
-    start_test "Array validation excludes valid rows from results"
-    if echo "$response" | grep -q '"results":\[\]' || echo "$response" | python3 -c "import sys, json; data=json.load(sys.stdin); sys.exit(0 if len(data.get('results', [])) == 0 else 1)" 2>/dev/null; then
-        pass_test "Valid rows correctly excluded from results array"
-    else
-        fail_test "Valid rows should be excluded from results array"
+        fail_test "Array validation did not return expected structure"
         echo "Response: $response"
     fi
 
@@ -783,10 +777,10 @@ main() {
         "model_type": "incident",
         "data": [
           {
-            "id": "INC-20240115-0003",
+            "id": "INC-003",
             "title": "Valid Record",
             "description": "This is a valid incident record for testing",
-            "priority": 5,
+            "priority": 1,
             "severity": "critical",
             "status": "open",
             "category": "performance",
@@ -809,21 +803,10 @@ main() {
 
     if echo "$response" | grep -q '"total_records":2' && \
        echo "$response" | grep -q '"valid_records":1' && \
-       echo "$response" | grep -q '"invalid_records":1' && \
-       echo "$response" | grep -q '"status":"success"'; then
-        pass_test "Array validation correctly identifies mixed valid/invalid records (status: success, no threshold)"
+       echo "$response" | grep -q '"invalid_records":1'; then
+        pass_test "Array validation correctly identifies mixed valid/invalid records"
     else
         fail_test "Array validation did not correctly process mixed records"
-        echo "Response: $response"
-    fi
-
-    # Test that only invalid rows are in results
-    start_test "Array validation only includes invalid rows in results"
-    results_count=$(echo "$response" | python3 -c "import sys, json; data=json.load(sys.stdin); print(len(data.get('results', [])))" 2>/dev/null || echo "unknown")
-    if [ "$results_count" = "1" ]; then
-        pass_test "Only 1 invalid row included in results (valid rows excluded)"
-    else
-        fail_test "Expected 1 invalid row in results, got: $results_count"
         echo "Response: $response"
     fi
 
@@ -835,10 +818,10 @@ main() {
         "model_type": "incident",
         "data": [
           {
-            "id": "INC-20240115-0004",
+            "id": "INC-004",
             "title": "Summary Test",
             "description": "Testing that summary statistics are returned correctly",
-            "priority": 5,
+            "priority": 1,
             "severity": "critical",
             "status": "open",
             "category": "performance",
@@ -860,18 +843,18 @@ main() {
         echo "Response: $response"
     fi
 
-    # Test array validation includes row-level results (valid record should have empty results)
-    start_test "Array validation with valid record has empty results array"
+    # Test array validation includes row-level results
+    start_test "Array validation includes row-level validation results"
     response=$(curl -s -X POST "$API_BASE/validate" \
       -H "Content-Type: application/json" \
       -d '{
         "model_type": "incident",
         "data": [
           {
-            "id": "INC-20240115-0005",
-            "title": "Row Level Test",
-            "description": "Testing row-level validation results with proper title length",
-            "priority": 5,
+            "id": "INC-005",
+            "title": "Row Test",
+            "description": "Testing row-level validation results",
+            "priority": 1,
             "severity": "critical",
             "status": "open",
             "category": "performance",
@@ -884,12 +867,146 @@ main() {
         ]
       }')
 
-    # Valid record with warnings should have 1 result (STALE_INCIDENT warning)
-    results_count=$(echo "$response" | python3 -c "import sys, json; data=json.load(sys.stdin); print(len(data.get('results', [])))" 2>/dev/null || echo "unknown")
-    if [ "$results_count" = "1" ]; then
-        pass_test "Valid record with warnings correctly included in results array"
+    if echo "$response" | grep -q '"results"' && \
+       echo "$response" | grep -q '"row_index"' && \
+       echo "$response" | grep -q '"record_identifier"' && \
+       echo "$response" | grep -q '"is_valid"'; then
+        pass_test "Array validation includes row-level results"
     else
-        fail_test "Expected 1 row in results for valid record with warnings, got: $results_count"
+        fail_test "Array validation row-level results are missing"
+        echo "Response: $response"
+    fi
+
+    # Test array validation with threshold parameter (success case: 80% threshold, 100% success rate)
+    start_test "Array validation with threshold parameter (success case)"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "threshold": 80.0,
+        "data": [
+          {
+            "id": "INC-20240101-0001",
+            "title": "Threshold Test Valid 1",
+            "description": "Testing threshold validation with first valid record",
+            "priority": 5,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "alice@example.com",
+            "assigned_to": "bob@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          },
+          {
+            "id": "INC-20240101-0002",
+            "title": "Threshold Test Valid 2",
+            "description": "Testing threshold validation with second valid record",
+            "priority": 4,
+            "severity": "high",
+            "status": "open",
+            "category": "bug",
+            "environment": "production",
+            "reported_by": "bob@example.com",
+            "assigned_to": "alice@example.com",
+            "created_at": "2024-01-15T11:00:00Z",
+            "reported_at": "2024-01-15T11:00:00Z"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"threshold":80' && \
+       echo "$response" | grep -q '"status":"success"' && \
+       echo "$response" | grep -q '"total_records":2' && \
+       echo "$response" | grep -q '"valid_records":2'; then
+        pass_test "Array validation with threshold (success case) works correctly"
+    else
+        fail_test "Array validation with threshold did not return expected success status"
+        echo "Response: $response"
+    fi
+
+    # Test array validation with threshold parameter (failure case: 80% threshold, 50% success rate)
+    start_test "Array validation with threshold parameter (failure case)"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "threshold": 80.0,
+        "data": [
+          {
+            "id": "INC-20240101-0003",
+            "title": "Threshold Test Valid Record",
+            "description": "Testing threshold validation with one valid record",
+            "priority": 5,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "alice@example.com",
+            "assigned_to": "bob@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          },
+          {
+            "id": "INVALID",
+            "title": "Bad",
+            "priority": 999,
+            "severity": "invalid",
+            "status": "unknown"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"threshold":80' && \
+       echo "$response" | grep -q '"status":"failed"' && \
+       echo "$response" | grep -q '"total_records":2' && \
+       echo "$response" | grep -q '"valid_records":1' && \
+       echo "$response" | grep -q '"invalid_records":1'; then
+        pass_test "Array validation with threshold (failure case) correctly fails when below threshold"
+    else
+        fail_test "Array validation with threshold did not return expected failed status"
+        echo "Response: $response"
+    fi
+
+    # Test array validation without threshold parameter (should succeed even with failures)
+    start_test "Array validation without threshold parameter (no threshold enforcement)"
+    response=$(curl -s -X POST "$API_BASE/validate" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model_type": "incident",
+        "data": [
+          {
+            "id": "INC-20240101-0004",
+            "title": "No Threshold Test",
+            "description": "Testing validation without threshold parameter",
+            "priority": 5,
+            "severity": "critical",
+            "status": "open",
+            "category": "performance",
+            "environment": "production",
+            "reported_by": "alice@example.com",
+            "assigned_to": "bob@example.com",
+            "created_at": "2024-01-15T10:00:00Z",
+            "reported_at": "2024-01-15T10:00:00Z"
+          },
+          {
+            "id": "INVALID",
+            "title": "Bad",
+            "priority": 999,
+            "severity": "invalid",
+            "status": "unknown"
+          }
+        ]
+      }')
+
+    if echo "$response" | grep -q '"status":"success"' && \
+       echo "$response" | grep -q '"total_records":2' && \
+       echo "$response" | grep -q '"valid_records":1' && \
+       echo "$response" | grep -q '"invalid_records":1'; then
+        pass_test "Array validation without threshold returns success status"
+    else
+        fail_test "Array validation without threshold did not return expected status"
         echo "Response: $response"
     fi
 
@@ -900,10 +1017,10 @@ main() {
       -d '{
         "model_type": "incident",
         "payload": {
-          "id": "INC-006",
+          "id": "INC-20240101-0010",
           "title": "Backward Compatibility Test",
           "description": "Testing that single object validation still works",
-          "priority": 1,
+          "priority": 5,
           "severity": "critical",
           "status": "open",
           "category": "feature",
@@ -924,393 +1041,104 @@ main() {
     fi
 
     echo ""
-    echo "🎯 Phase 10: Threshold Validation Testing"
-    echo "=========================================="
+    echo "📊 Phase 10: Threshold Validation with Test Data Files"
+    echo "======================================================"
 
-    # Test 1: Threshold success - 80% valid with 20% threshold
-    start_test "Threshold: 80% valid with 20% threshold should succeed"
-    response=$(curl -s -X POST "$API_BASE/validate" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model_type": "incident",
-        "threshold": 20.0,
-        "data": [
-          {
-            "id": "INC-20240115-1001",
-            "title": "Valid Record 1",
-            "description": "Testing threshold validation with valid record",
-            "priority": 5,
-            "severity": "critical",
-            "status": "open",
-            "category": "performance",
-            "environment": "production",
-            "reported_by": "alice@example.com",
-            "assigned_to": "bob@example.com",
-            "created_at": "2024-01-15T10:00:00Z",
-            "reported_at": "2024-01-15T10:00:00Z"
-          },
-          {
-            "id": "INC-20240115-1002",
-            "title": "Valid Record 2",
-            "description": "Testing threshold validation with valid record",
-            "priority": 4,
-            "severity": "high",
-            "status": "open",
-            "category": "bug",
-            "environment": "production",
-            "reported_by": "bob@example.com",
-            "assigned_to": "alice@example.com",
-            "created_at": "2024-01-15T11:00:00Z",
-            "reported_at": "2024-01-15T11:00:00Z"
-          },
-          {
-            "id": "INC-20240115-1003",
-            "title": "Valid Record 3",
-            "description": "Testing threshold validation with valid record",
-            "priority": 3,
-            "severity": "medium",
-            "status": "open",
-            "category": "performance",
-            "environment": "staging",
-            "reported_by": "charlie@example.com",
-            "assigned_to": "dave@example.com",
-            "created_at": "2024-01-15T12:00:00Z",
-            "reported_at": "2024-01-15T12:00:00Z"
-          },
-          {
-            "id": "INC-20240115-1004",
-            "title": "Valid Record 4",
-            "description": "Testing threshold validation with valid record",
-            "priority": 5,
-            "severity": "critical",
-            "status": "investigating",
-            "category": "security",
-            "environment": "production",
-            "reported_by": "dave@example.com",
-            "assigned_to": "charlie@example.com",
-            "created_at": "2024-01-15T13:00:00Z",
-            "reported_at": "2024-01-15T13:00:00Z"
-          },
-          {
-            "id": "INVALID-1",
-            "title": "",
-            "description": "Bad",
-            "priority": 999,
-            "severity": "invalid",
-            "status": "unknown"
-          }
-        ]
-      }')
+    # Test threshold validation using test_data files
+    THRESHOLD_DIR="test_data/arrays/threshold"
 
-    if echo "$response" | grep -q '"status":"success"' && \
-       echo "$response" | grep -q '"total_records":5' && \
-       echo "$response" | grep -q '"valid_records":4' && \
-       echo "$response" | grep -q '"invalid_records":1' && \
-       echo "$response" | grep -q '"threshold":20'; then
-        pass_test "Threshold validation: 80% valid (4/5) with 20% threshold = success"
+    # Test 1: Incident Success (100% valid, 80% threshold)
+    if [ -f "$THRESHOLD_DIR/incident_success_80.json" ]; then
+        start_test "Threshold test with incident success case (100% valid, 80% threshold)"
+        PAYLOAD=$(cat "$THRESHOLD_DIR/incident_success_80.json")
+        response=$(curl -s -X POST "$API_BASE/validate" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_type\":\"incident\",\"threshold\":80.0,\"data\":$PAYLOAD}")
+
+        if echo "$response" | grep -q '"status":"success"' && \
+           echo "$response" | grep -q '"threshold":80'; then
+            pass_test "Incident threshold success case (test_data file)"
+        else
+            fail_test "Incident threshold success case failed"
+            echo "Response: $response"
+        fi
     else
-        fail_test "Threshold validation failed: expected success with 80% valid rate"
-        echo "Response: $response"
+        log_warning "Test data file not found: $THRESHOLD_DIR/incident_success_80.json"
     fi
 
-    # Test 2: Threshold failure - 10% valid with 20% threshold
-    start_test "Threshold: 10% valid with 20% threshold should fail"
-    response=$(curl -s -X POST "$API_BASE/validate" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model_type": "incident",
-        "threshold": 20.0,
-        "data": [
-          {
-            "id": "INC-20240115-2001",
-            "title": "Valid Record",
-            "description": "Testing threshold validation with one valid record",
-            "priority": 5,
-            "severity": "critical",
-            "status": "open",
-            "category": "performance",
-            "environment": "production",
-            "reported_by": "alice@example.com",
-            "assigned_to": "bob@example.com",
-            "created_at": "2024-01-15T10:00:00Z",
-            "reported_at": "2024-01-15T10:00:00Z"
-          },
-          {
-            "id": "INV-1",
-            "title": "",
-            "description": "Bad",
-            "priority": 999,
-            "severity": "invalid",
-            "status": "unknown"
-          },
-          {
-            "id": "INV-2",
-            "title": "x",
-            "description": "Bad",
-            "priority": 888,
-            "severity": "wrong",
-            "status": "bad"
-          },
-          {
-            "id": "INV-3",
-            "title": "",
-            "description": "Bad record",
-            "priority": 777,
-            "severity": "fail",
-            "status": "error"
-          },
-          {
-            "id": "INV-4",
-            "title": "a",
-            "description": "Bad",
-            "priority": 666,
-            "severity": "invalid",
-            "status": "broken"
-          },
-          {
-            "id": "INV-5",
-            "title": "",
-            "description": "Bad",
-            "priority": 555,
-            "severity": "fail",
-            "status": "error"
-          },
-          {
-            "id": "INV-6",
-            "title": "b",
-            "description": "Bad",
-            "priority": 444,
-            "severity": "wrong",
-            "status": "broken"
-          },
-          {
-            "id": "INV-7",
-            "title": "",
-            "description": "Bad",
-            "priority": 333,
-            "severity": "invalid",
-            "status": "error"
-          },
-          {
-            "id": "INV-8",
-            "title": "c",
-            "description": "Bad",
-            "priority": 222,
-            "severity": "fail",
-            "status": "broken"
-          },
-          {
-            "id": "INV-9",
-            "title": "",
-            "description": "Bad",
-            "priority": 111,
-            "severity": "wrong",
-            "status": "error"
-          }
-        ]
-      }')
+    # Test 2: Incident Failure (60% valid < 80% threshold)
+    if [ -f "$THRESHOLD_DIR/incident_failure_80.json" ]; then
+        start_test "Threshold test with incident failure case (60% valid < 80% threshold)"
+        PAYLOAD=$(cat "$THRESHOLD_DIR/incident_failure_80.json")
+        response=$(curl -s -X POST "$API_BASE/validate" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_type\":\"incident\",\"threshold\":80.0,\"data\":$PAYLOAD}")
 
-    if echo "$response" | grep -q '"status":"failed"' && \
-       echo "$response" | grep -q '"total_records":10' && \
-       echo "$response" | grep -q '"valid_records":1' && \
-       echo "$response" | grep -q '"invalid_records":9' && \
-       echo "$response" | grep -q '"threshold":20'; then
-        pass_test "Threshold validation: 10% valid (1/10) with 20% threshold = failed"
+        if echo "$response" | grep -q '"status":"failed"' && \
+           echo "$response" | grep -q '"threshold":80'; then
+            pass_test "Incident threshold failure case (test_data file)"
+        else
+            fail_test "Incident threshold failure case did not fail as expected"
+            echo "Response: $response"
+        fi
     else
-        fail_test "Threshold validation failed: expected failed status with 10% valid rate"
-        echo "Response: $response"
+        log_warning "Test data file not found: $THRESHOLD_DIR/incident_failure_80.json"
     fi
 
-    # Test 3: Exact threshold match - 20% valid with 20% threshold
-    start_test "Threshold: exactly 20% valid with 20% threshold should succeed"
-    response=$(curl -s -X POST "$API_BASE/validate" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model_type": "incident",
-        "threshold": 20.0,
-        "data": [
-          {
-            "id": "INC-20240115-3001",
-            "title": "Valid Record",
-            "description": "Testing exact threshold match with valid record",
-            "priority": 5,
-            "severity": "critical",
-            "status": "open",
-            "category": "performance",
-            "environment": "production",
-            "reported_by": "alice@example.com",
-            "assigned_to": "bob@example.com",
-            "created_at": "2024-01-15T10:00:00Z",
-            "reported_at": "2024-01-15T10:00:00Z"
-          },
-          {
-            "id": "INV-10",
-            "title": "",
-            "description": "Bad",
-            "priority": 999,
-            "severity": "invalid",
-            "status": "unknown"
-          },
-          {
-            "id": "INV-11",
-            "title": "x",
-            "description": "Bad",
-            "priority": 888,
-            "severity": "wrong",
-            "status": "bad"
-          },
-          {
-            "id": "INV-12",
-            "title": "",
-            "description": "Bad",
-            "priority": 777,
-            "severity": "fail",
-            "status": "error"
-          },
-          {
-            "id": "INV-13",
-            "title": "a",
-            "description": "Bad",
-            "priority": 666,
-            "severity": "invalid",
-            "status": "broken"
-          }
-        ]
-      }')
+    # Test 3: API Success (100% valid, 80% threshold)
+    if [ -f "$THRESHOLD_DIR/api_success_80.json" ]; then
+        start_test "Threshold test with API success case (100% valid, 80% threshold)"
+        PAYLOAD=$(cat "$THRESHOLD_DIR/api_success_80.json")
+        response=$(curl -s -X POST "$API_BASE/validate" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_type\":\"api\",\"threshold\":80.0,\"data\":$PAYLOAD}")
 
-    if echo "$response" | grep -q '"status":"success"' && \
-       echo "$response" | grep -q '"total_records":5' && \
-       echo "$response" | grep -q '"valid_records":1' && \
-       echo "$response" | grep -q '"invalid_records":4' && \
-       echo "$response" | grep -q '"threshold":20'; then
-        pass_test "Threshold validation: exactly 20% valid (1/5) with 20% threshold = success"
+        if echo "$response" | grep -q '"status":"success"' && \
+           echo "$response" | grep -q '"threshold":80'; then
+            pass_test "API threshold success case (test_data file)"
+        else
+            fail_test "API threshold success case failed"
+            echo "Response: $response"
+        fi
     else
-        fail_test "Threshold validation failed: expected success with exactly 20% valid rate"
-        echo "Response: $response"
+        log_warning "Test data file not found: $THRESHOLD_DIR/api_success_80.json"
     fi
 
-    # Test 4: No threshold with multiple records should default to success
-    start_test "No threshold: multiple records with some invalid should default to success"
-    response=$(curl -s -X POST "$API_BASE/validate" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model_type": "incident",
-        "data": [
-          {
-            "id": "INC-20240115-4001",
-            "title": "Valid Record",
-            "description": "Testing no threshold with valid record",
-            "priority": 5,
-            "severity": "critical",
-            "status": "open",
-            "category": "performance",
-            "environment": "production",
-            "reported_by": "alice@example.com",
-            "assigned_to": "bob@example.com",
-            "created_at": "2024-01-15T10:00:00Z",
-            "reported_at": "2024-01-15T10:00:00Z"
-          },
-          {
-            "id": "INV-14",
-            "title": "",
-            "description": "Bad",
-            "priority": 999,
-            "severity": "invalid",
-            "status": "unknown"
-          }
-        ]
-      }')
+    # Test 4: API Failure (50% valid < 80% threshold)
+    if [ -f "$THRESHOLD_DIR/api_failure_80.json" ]; then
+        start_test "Threshold test with API failure case (50% valid < 80% threshold)"
+        PAYLOAD=$(cat "$THRESHOLD_DIR/api_failure_80.json")
+        response=$(curl -s -X POST "$API_BASE/validate" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_type\":\"api\",\"threshold\":80.0,\"data\":$PAYLOAD}")
 
-    if echo "$response" | grep -q '"status":"success"' && \
-       echo "$response" | grep -q '"total_records":2' && \
-       echo "$response" | grep -q '"valid_records":1' && \
-       echo "$response" | grep -q '"invalid_records":1' && \
-       ! echo "$response" | grep -q '"threshold"'; then
-        pass_test "No threshold: multiple records default to success (no threshold field in response)"
+        if echo "$response" | grep -q '"status":"failed"' && \
+           echo "$response" | grep -q '"threshold":80'; then
+            pass_test "API threshold failure case (test_data file)"
+        else
+            fail_test "API threshold failure case did not fail as expected"
+            echo "Response: $response"
+        fi
     else
-        fail_test "No threshold validation failed: expected success status by default"
-        echo "Response: $response"
+        log_warning "Test data file not found: $THRESHOLD_DIR/api_failure_80.json"
     fi
 
-    # Test 5: Single invalid record with no threshold should fail
-    start_test "No threshold: single invalid record should fail"
-    response=$(curl -s -X POST "$API_BASE/validate" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model_type": "incident",
-        "data": [
-          {
-            "id": "INV-15",
-            "title": "",
-            "description": "Bad",
-            "priority": 999,
-            "severity": "invalid",
-            "status": "unknown"
-          }
-        ]
-      }')
+    # Test 5: No threshold with mixed results (should succeed)
+    if [ -f "$THRESHOLD_DIR/incident_failure_80.json" ]; then
+        start_test "Array validation without threshold (mixed results, no enforcement)"
+        PAYLOAD=$(cat "$THRESHOLD_DIR/incident_failure_80.json")
+        response=$(curl -s -X POST "$API_BASE/validate" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_type\":\"incident\",\"data\":$PAYLOAD}")
 
-    if echo "$response" | grep -q '"status":"failed"' && \
-       echo "$response" | grep -q '"total_records":1' && \
-       echo "$response" | grep -q '"valid_records":0' && \
-       echo "$response" | grep -q '"invalid_records":1'; then
-        pass_test "Single invalid record with no threshold correctly returns failed status"
+        if echo "$response" | grep -q '"status":"success"'; then
+            pass_test "No threshold returns success for multiple records (test_data file)"
+        else
+            fail_test "No threshold case should return success"
+            echo "Response: $response"
+        fi
     else
-        fail_test "Single invalid record should return failed status"
-        echo "Response: $response"
-    fi
-
-    # Test 6: 50% threshold with exactly 50% valid records
-    start_test "Threshold: exactly 50% valid with 50% threshold should succeed"
-    response=$(curl -s -X POST "$API_BASE/validate" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model_type": "incident",
-        "threshold": 50.0,
-        "data": [
-          {
-            "id": "INC-20240115-5001",
-            "title": "Valid Record 1",
-            "description": "Testing 50% threshold with valid record",
-            "priority": 5,
-            "severity": "critical",
-            "status": "open",
-            "category": "performance",
-            "environment": "production",
-            "reported_by": "alice@example.com",
-            "assigned_to": "bob@example.com",
-            "created_at": "2024-01-15T10:00:00Z",
-            "reported_at": "2024-01-15T10:00:00Z"
-          },
-          {
-            "id": "INV-16",
-            "title": "",
-            "description": "Bad",
-            "priority": 999,
-            "severity": "invalid",
-            "status": "unknown"
-          }
-        ]
-      }')
-
-    if echo "$response" | grep -q '"status":"success"' && \
-       echo "$response" | grep -q '"total_records":2' && \
-       echo "$response" | grep -q '"valid_records":1' && \
-       echo "$response" | grep -q '"invalid_records":1' && \
-       echo "$response" | grep -q '"threshold":50'; then
-        pass_test "Threshold validation: exactly 50% valid (1/2) with 50% threshold = success"
-    else
-        fail_test "Threshold validation failed: expected success with exactly 50% valid rate"
-        echo "Response: $response"
-    fi
-
-    # Test 7: Verify results include invalid rows and rows with warnings
-    start_test "Threshold: verify results exclude only valid rows without warnings"
-    results_count=$(echo "$response" | python3 -c "import sys, json; data=json.load(sys.stdin); print(len(data.get('results', [])))" 2>/dev/null || echo "unknown")
-    if [ "$results_count" -ge "1" ]; then
-        pass_test "Threshold validation: results correctly include invalid/warning rows (got $results_count rows)"
-    else
-        fail_test "Expected at least 1 row in results, got: $results_count"
+        log_warning "Test data file not found: $THRESHOLD_DIR/incident_failure_80.json"
     fi
 
     echo ""

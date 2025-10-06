@@ -235,7 +235,7 @@ func TestBatchSessionManager_UpdateSession(t *testing.T) {
 	manager := GetBatchSessionManager()
 	threshold := 50.0
 
-	session := manager.CreateBatchSession("batch-002", &threshold)
+	_ = manager.CreateBatchSession("batch-002", &threshold)
 
 	// Update with validation results
 	err := manager.UpdateBatchSession("batch-002", 80, 20, 5)
@@ -326,7 +326,7 @@ func TestBatchSessionManager_FinalizeSession(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			batchID := fmt.Sprintf("batch-finalize-%d", i)
-			session := manager.CreateBatchSession(batchID, tt.threshold)
+			_ = manager.CreateBatchSession(batchID, tt.threshold)
 
 			// Update session with counts
 			manager.UpdateBatchSession(batchID, tt.validCount, tt.invalidCount, 0)
@@ -402,7 +402,7 @@ func TestBatchSession_ThresholdEdgeCases(t *testing.T) {
 
 	// Test exact threshold match (20.0% with 20% threshold)
 	threshold := 20.0
-	session := manager.CreateBatchSession("batch-edge-1", &threshold)
+	_ = manager.CreateBatchSession("batch-edge-1", &threshold)
 	manager.UpdateBatchSession("batch-edge-1", 20, 80, 0)
 	status, _ := manager.FinalizeBatchSession("batch-edge-1")
 
@@ -412,7 +412,7 @@ func TestBatchSession_ThresholdEdgeCases(t *testing.T) {
 	manager.DeleteBatchSession("batch-edge-1")
 
 	// Test just above threshold (20.0001% with 20% threshold)
-	session2 := manager.CreateBatchSession("batch-edge-2", &threshold)
+	_ = manager.CreateBatchSession("batch-edge-2", &threshold)
 	manager.UpdateBatchSession("batch-edge-2", 20001, 79999, 0)
 	status2, _ := manager.FinalizeBatchSession("batch-edge-2")
 
@@ -422,7 +422,7 @@ func TestBatchSession_ThresholdEdgeCases(t *testing.T) {
 	manager.DeleteBatchSession("batch-edge-2")
 
 	// Test just below threshold (19.9999% with 20% threshold)
-	session3 := manager.CreateBatchSession("batch-edge-3", &threshold)
+	_ = manager.CreateBatchSession("batch-edge-3", &threshold)
 	manager.UpdateBatchSession("batch-edge-3", 19999, 80001, 0)
 	status3, _ := manager.FinalizeBatchSession("batch-edge-3")
 

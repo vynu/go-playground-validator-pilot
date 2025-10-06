@@ -1,0 +1,15 @@
+{
+  "type": "test.event",
+  "version": "1.0.0",
+  "timestamp": "2025-01-04T10:00:00Z",
+  "source": "https://api.example.com",
+  "data": {
+    "user_id": "12345",
+    "action": "created"
+  },
+  "metadata": {
+    "region": "us-east-1"
+  },
+  "tags": ["test", "validation"],
+  "status": "completed"
+}

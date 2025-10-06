@@ -1,0 +1,23 @@
+[
+  {
+    "type": "valid.event",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:00:00Z",
+    "source": "https://api.example.com",
+    "data": {"id": "1"},
+    "status": "completed"
+  },
+  {
+    "type": "valid.event2",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:01:00Z",
+    "source": "https://api.example.com",
+    "data": {"id": "2"},
+    "status": "completed"
+  },
+  {
+    "type": "",
+    "version": "",
+    "data": null
+  }
+]

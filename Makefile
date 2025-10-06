@@ -114,9 +114,10 @@ test: mod-tidy ## Run all unit tests
 .PHONY: test-coverage
 test-coverage: mod-tidy ## Run tests with coverage report
 	@echo "$(BLUE)Running tests with coverage...$(RESET)"
-	cd $(SRC_DIR) && go test -timeout $(TEST_TIMEOUT) -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
-	cd $(SRC_DIR) && go tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_HTML)
-	@echo "$(GREEN)✓ Coverage report generated: $(SRC_DIR)/$(COVERAGE_HTML)$(RESET)"
+	@mkdir -p coverage
+	cd $(SRC_DIR) && go test -timeout $(TEST_TIMEOUT) -coverprofile=../$(COVERAGE_FILE) -covermode=atomic ./...
+	cd $(SRC_DIR) && go tool cover -html=../$(COVERAGE_FILE) -o ../$(COVERAGE_HTML)
+	@echo "$(GREEN)✓ Coverage report generated: $(COVERAGE_HTML)$(RESET)"
 
 .PHONY: test-race
 test-race: mod-tidy ## Run tests with race detection
@@ -177,29 +178,14 @@ benchmark-package: ## Run benchmarks for specific package (usage: make benchmark
 ##@ E2E Testing Commands
 
 .PHONY: test-e2e
-test-e2e: build ## Run E2E test suite
-	@echo "$(BLUE)Running E2E test suite...$(RESET)"
-	@if [ ! -f "./e2e_test_suite.sh" ]; then \
-		echo "$(RED)Error: e2e_test_suite.sh not found$(RESET)"; \
-		exit 1; \
-	fi
+test-e2e: build ## Run comprehensive E2E test suite (all validation scenarios including Phase 2)
+	@echo "$(BLUE)Running E2E test suite (unit + validation + array + threshold + batch)...$(RESET)"
 	chmod +x ./e2e_test_suite.sh
-	./e2e_test_suite.sh
-	@echo "$(GREEN)✓ E2E tests completed$(RESET)"
-
-.PHONY: test-e2e-verbose
-test-e2e-verbose: build ## Run E2E test suite with verbose output
-	@echo "$(BLUE)Running E2E test suite (verbose)...$(RESET)"
-	@if [ ! -f "./e2e_test_suite.sh" ]; then \
-		echo "$(RED)Error: e2e_test_suite.sh not found$(RESET)"; \
-		exit 1; \
-	fi
-	chmod +x ./e2e_test_suite.sh
-	VERBOSE=1 ./e2e_test_suite.sh
+	PORT=8086 ./e2e_test_suite.sh
 	@echo "$(GREEN)✓ E2E tests completed$(RESET)"
 
 .PHONY: test-all
-test-all: test test-race test-e2e ## Run all tests (unit, race, E2E)
+test-all: test test-race test-e2e ## Run all tests (unit + race + E2E)
 	@echo "$(GREEN)✓ All tests completed successfully$(RESET)"
 
 ##@ Docker Development Commands
@@ -510,7 +496,7 @@ release: test-all build-all docker-build security ## Full release preparation
 .PHONY: clean
 clean: ## Clean binaries and test artifacts
 	@echo "$(YELLOW)Cleaning build artifacts...$(RESET)"
-	rm -rf $(BIN_DIR) coverage*.* test_results*
+	rm -rf $(BIN_DIR) coverage coverage*.* test_results*
 	find . -name "*.test" -type f -delete 2>/dev/null || true
 	@echo "$(GREEN)✓ Build artifacts cleaned$(RESET)"
 
