@@ -430,7 +430,7 @@ func (ur *UnifiedRegistry) ValidatePayload(modelType ModelType, payload interfac
 }
 
 // ValidateArray validates an array of records and returns structured results
-// Only invalid/warning rows are included in the results array
+// Only invalid rows are included in the results array (successful validations return empty results)
 // Status is determined by threshold: if no threshold provided, status is "success" for single records
 // For multiple records with threshold, status is "success" if success_rate >= threshold, otherwise "failed"
 func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[string]interface{}, threshold *float64) (*models.ArrayValidationResult, error) {
@@ -465,11 +465,12 @@ func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[stri
 		}
 	}
 
-	// Filter results: only include invalid rows and rows with warnings
+	// Filter results: only include invalid rows (failed validations)
+	// Successful validations should NOT return any results
 	filteredResults := make([]models.RowValidationResult, 0)
 	for _, result := range allResults {
-		// Include if invalid OR if valid but has warnings
-		if !result.IsValid || len(result.Warnings) > 0 {
+		// Only include if invalid (IsValid == false)
+		if !result.IsValid {
 			filteredResults = append(filteredResults, result)
 		}
 	}
@@ -510,7 +511,7 @@ func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[stri
 		Threshold:      threshold,
 		ProcessingTime: time.Since(startTime).Milliseconds(),
 		CompletedAt:    time.Now(),
-		Results:        filteredResults,                 // Only invalid/warning rows
+		Results:        filteredResults,                 // Only invalid rows (successful validations excluded)
 		Summary:        models.BuildSummary(allResults), // Summary includes all rows
 	}
 
