@@ -18,31 +18,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"goplayground-data-validator/models"
 	"goplayground-data-validator/validations"
 )
 
-// FileSystemWatcher monitors file system changes for dynamic model updates
-type FileSystemWatcher struct {
-	modelsPath      string
-	validationsPath string
-	registry        *UnifiedRegistry
-	pollInterval    time.Duration
-	lastScan        map[string]time.Time
-	mutex          sync.RWMutex
-}
-
-// NewFileSystemWatcher creates a new file system watcher
-func NewFileSystemWatcher(modelsPath, validationsPath string, registry *UnifiedRegistry) *FileSystemWatcher {
-	return &FileSystemWatcher{
-		modelsPath:      modelsPath,
-		validationsPath: validationsPath,
-		registry:        registry,
-		pollInterval:    2 * time.Second,
-		lastScan:        make(map[string]time.Time),
-	}
-}
+// Removed FileSystemWatcher - keeping the system simple with startup-only registration
 
 // UnifiedRegistry is the single, consolidated registry system that handles:
 // - Automatic model discovery and registration
@@ -54,9 +36,7 @@ type UnifiedRegistry struct {
 	modelsPath      string
 	validationsPath string
 	mux             *http.ServeMux
-	watcher         *FileSystemWatcher
 	mutex           sync.RWMutex
-	isMonitoring    bool
 }
 
 // NewUnifiedRegistry creates a new unified registry instance
@@ -66,12 +46,11 @@ func NewUnifiedRegistry(modelsPath, validationsPath string) *UnifiedRegistry {
 		modelsPath:      modelsPath,
 		validationsPath: validationsPath,
 		mutex:           sync.RWMutex{},
-		isMonitoring:    false,
 	}
 }
 
 // StartAutoRegistration performs initial discovery and starts file system monitoring
-func (ur *UnifiedRegistry) StartAutoRegistration(ctx context.Context, mux *http.ServeMux) error {
+func (ur *UnifiedRegistry) StartAutoRegistration(_ context.Context, mux *http.ServeMux) error {
 	ur.mux = mux
 
 	log.Println("🚀 Starting unified automatic model registration system...")
@@ -84,10 +63,8 @@ func (ur *UnifiedRegistry) StartAutoRegistration(ctx context.Context, mux *http.
 	// Phase 2: Register HTTP endpoints for discovered models (only once)
 	ur.registerAllHTTPEndpoints()
 
-	// Phase 3: Start file system monitoring for ongoing changes (TODO: Fix HTTP re-registration issue)
-	// NOTE: Temporarily disabled to prevent HTTP endpoint conflicts
-	log.Println("🔄 File system monitoring temporarily disabled until HTTP re-registration is fixed")
-	ur.isMonitoring = false
+	// Phase 3: File system monitoring removed - keeping it simple with startup-only registration
+	log.Println("✅ Pure auto-registration completed - models will be discovered on each startup")
 
 	return nil
 }
@@ -193,12 +170,13 @@ func (ur *UnifiedRegistry) discoverModelStruct(baseName string) (reflect.Type, s
 
 	// Try different naming patterns
 	possibleNames := discoveredStructs
+	titleCase := toTitleCase(baseName)
 	possibleNames = append(possibleNames,
-		strings.Title(baseName)+"Payload",
-		strings.Title(baseName)+"Model",
-		strings.Title(baseName)+"Request",
-		strings.Title(baseName)+"Data",
-		strings.Title(baseName),
+		titleCase+"Payload",
+		titleCase+"Model",
+		titleCase+"Request",
+		titleCase+"Data",
+		titleCase,
 	)
 
 	// Get known model types
@@ -253,12 +231,12 @@ func (ur *UnifiedRegistry) createValidatorInstance(baseName string) (interface{}
 	if special, exists := specialCases[baseName]; exists {
 		titleCase = special
 	} else {
-		titleCase = strings.Title(baseName)
+		titleCase = toTitleCase(baseName)
 	}
 
 	possibleNames := []string{
-		"New" + titleCase + "Validator",              // NewGitHubValidator, NewAPIValidator
-		"New" + strings.Title(baseName) + "Validator", // NewGithubValidator
+		"New" + titleCase + "Validator",                 // NewGitHubValidator, NewAPIValidator
+		"New" + toTitleCase(baseName) + "Validator",     // NewGithubValidator
 		"New" + strings.ToUpper(baseName) + "Validator", // NewGITHUBValidator
 	}
 
@@ -315,10 +293,10 @@ func (ur *UnifiedRegistry) generateModelName(baseName, structName string) string
 	}
 
 	if strings.Contains(strings.ToLower(structName), "payload") {
-		return strings.Title(baseName) + " Payload"
+		return toTitleCase(baseName) + " Payload"
 	}
 
-	return strings.Title(baseName) + " Data"
+	return toTitleCase(baseName) + " Data"
 }
 
 // generateModelDescription creates model descriptions
@@ -336,7 +314,7 @@ func (ur *UnifiedRegistry) generateModelDescription(baseName string) string {
 		return desc
 	}
 
-	return fmt.Sprintf("Automatically discovered %s validation with comprehensive business rules", strings.Title(baseName))
+	return fmt.Sprintf("Automatically discovered %s validation with comprehensive business rules", toTitleCase(baseName))
 }
 
 // generateModelTags creates appropriate tags
@@ -451,6 +429,191 @@ func (ur *UnifiedRegistry) ValidatePayload(modelType ModelType, payload interfac
 	return validator.ValidatePayload(payload), nil
 }
 
+// ValidateArray validates an array of records and returns structured results
+// Only invalid rows are included in the results array (successful validations return empty results)
+// Status is determined by threshold: if no threshold provided, status is "success" for single records
+// For multiple records with threshold, status is "success" if success_rate >= threshold, otherwise "failed"
+func (ur *UnifiedRegistry) ValidateArray(modelType ModelType, records []map[string]interface{}, threshold *float64) (*models.ArrayValidationResult, error) {
+	// Generate batch_id for tracking
+	batchID := models.GenerateBatchID("auto")
+	startTime := time.Now()
+
+	allResults := make([]models.RowValidationResult, len(records))
+	validCount := 0
+	invalidCount := 0
+	warningCount := 0
+
+	// Get model info for struct creation
+	modelInfo, err := ur.GetModel(modelType)
+	if err != nil {
+		return nil, fmt.Errorf("model type not found: %w", err)
+	}
+
+	// Sequential validation (can be optimized later with worker pool)
+	for i, record := range records {
+		rowResult := ur.validateSingleRow(modelType, modelInfo, record, i)
+		allResults[i] = rowResult
+
+		if rowResult.IsValid {
+			validCount++
+			// Check if it has warnings only (valid but with warnings)
+			if len(rowResult.Warnings) > 0 {
+				warningCount++
+			}
+		} else {
+			invalidCount++
+		}
+	}
+
+	// Filter results: only include invalid rows (failed validations)
+	// Successful validations should NOT return any results
+	filteredResults := make([]models.RowValidationResult, 0)
+	for _, result := range allResults {
+		// Only include if invalid (IsValid == false)
+		if !result.IsValid {
+			filteredResults = append(filteredResults, result)
+		}
+	}
+
+	// Calculate success rate
+	totalRecords := len(records)
+	successRate := 0.0
+	if totalRecords > 0 {
+		successRate = (float64(validCount) / float64(totalRecords)) * 100.0
+	}
+
+	// Determine status based on threshold logic
+	status := "success" // default status
+
+	if threshold != nil {
+		// Threshold is provided - apply strict comparison
+		// success_rate >= threshold means success, otherwise failed
+		if successRate < *threshold {
+			status = "failed"
+		}
+	} else {
+		// No threshold provided
+		// For single record: "success" if valid, "failed" if invalid
+		// For multiple records: "success" (no threshold means we don't fail the batch)
+		if totalRecords == 1 && invalidCount > 0 {
+			status = "failed"
+		}
+		// For multiple records without threshold, status remains "success"
+	}
+
+	arrayResult := &models.ArrayValidationResult{
+		BatchID:        batchID,
+		Status:         status,
+		TotalRecords:   totalRecords,
+		ValidRecords:   validCount,
+		InvalidRecords: invalidCount,
+		WarningRecords: warningCount,
+		Threshold:      threshold,
+		ProcessingTime: time.Since(startTime).Milliseconds(),
+		CompletedAt:    time.Now(),
+		Results:        filteredResults,                 // Only invalid rows (successful validations excluded)
+		Summary:        models.BuildSummary(allResults), // Summary includes all rows
+	}
+
+	return arrayResult, nil
+}
+
+// validateSingleRow validates a single row from an array
+func (ur *UnifiedRegistry) validateSingleRow(modelType ModelType, modelInfo *ModelInfo, record map[string]interface{}, rowIndex int) models.RowValidationResult {
+	rowStartTime := time.Now()
+	recordID := models.DetectRecordIdentifier(record, rowIndex)
+
+	// Generate test name from model type (e.g., "incident" -> "IncidentValidator")
+	testName := fmt.Sprintf("%sValidator", toTitleCase(string(modelType)))
+
+	// Helper to create error result
+	createErrorResult := func(code, message string) models.RowValidationResult {
+		return models.RowValidationResult{
+			RowIndex:         rowIndex,
+			RecordIdentifier: recordID,
+			IsValid:          false,
+			ValidationTime:   time.Since(rowStartTime).Milliseconds(),
+			TestName:         testName,
+			Errors: []models.ValidationError{{
+				Field:   "record",
+				Message: message,
+				Code:    code,
+			}},
+			Warnings: []models.ValidationWarning{},
+		}
+	}
+
+	// Create and populate model instance
+	modelInstance := reflect.New(modelInfo.ModelStruct).Interface()
+
+	jsonBytes, err := json.Marshal(record)
+	if err != nil {
+		return createErrorResult("JSON_MARSHAL_ERROR", fmt.Sprintf("Failed to marshal record: %v", err))
+	}
+
+	if err := json.Unmarshal(jsonBytes, modelInstance); err != nil {
+		return createErrorResult("JSON_UNMARSHAL_ERROR", fmt.Sprintf("Failed to unmarshal record: %v", err))
+	}
+
+	// Validate using existing validator
+	modelValue := reflect.ValueOf(modelInstance).Elem().Interface()
+	result, err := ur.ValidatePayload(modelType, modelValue)
+	if err != nil {
+		return createErrorResult("VALIDATION_ERROR", fmt.Sprintf("Validation failed: %v", err))
+	}
+
+	// Convert validation result to row result
+	rowResult := models.RowValidationResult{
+		RowIndex:         rowIndex,
+		RecordIdentifier: recordID,
+		ValidationTime:   time.Since(rowStartTime).Milliseconds(),
+		TestName:         testName,
+		Errors:           []models.ValidationError{},
+		Warnings:         []models.ValidationWarning{},
+	}
+
+	// Extract validation result fields
+	if validationResult, ok := result.(models.ValidationResult); ok {
+		rowResult.IsValid = validationResult.IsValid
+		rowResult.Errors = validationResult.Errors
+		rowResult.Warnings = validationResult.Warnings
+	} else if resultMap, ok := result.(map[string]interface{}); ok {
+		// Handle map-based validation result
+		if isValid, exists := resultMap["is_valid"]; exists {
+			if valid, ok := isValid.(bool); ok {
+				rowResult.IsValid = valid
+			}
+		}
+
+		// Extract errors
+		if errors, exists := resultMap["errors"]; exists {
+			if errSlice, ok := errors.([]models.ValidationError); ok {
+				rowResult.Errors = errSlice
+			}
+		}
+
+		// Extract warnings
+		if warnings, exists := resultMap["warnings"]; exists {
+			if warnSlice, ok := warnings.([]models.ValidationWarning); ok {
+				rowResult.Warnings = warnSlice
+			}
+		}
+	}
+
+	// Add sub-test categorization based on error/warning codes
+	if !rowResult.IsValid && len(rowResult.Errors) > 0 {
+		// Determine sub-test from primary error code
+		primaryErrorCode := rowResult.Errors[0].Code
+		rowResult.TestName = fmt.Sprintf("%s:%s", testName, primaryErrorCode)
+	} else if len(rowResult.Warnings) > 0 {
+		// If valid but has warnings, categorize by warning code
+		primaryWarningCode := rowResult.Warnings[0].Code
+		rowResult.TestName = fmt.Sprintf("%s:%s", testName, primaryWarningCode)
+	}
+
+	return rowResult
+}
+
 // CreateModelInstance creates new instance of model struct
 func (ur *UnifiedRegistry) CreateModelInstance(modelType ModelType) (interface{}, error) {
 	model, err := ur.GetModel(modelType)
@@ -490,6 +653,9 @@ func (ur *UnifiedRegistry) registerAllHTTPEndpoints() {
 // createDynamicHandler creates HTTP handler for a specific model
 func (ur *UnifiedRegistry) createDynamicHandler(modelType ModelType, modelInfo *ModelInfo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Ensure request body is closed and cleaned up
+		defer r.Body.Close()
+
 		w.Header().Set("Content-Type", "application/json")
 
 		// Create model instance
@@ -512,7 +678,9 @@ func (ur *UnifiedRegistry) createDynamicHandler(modelType ModelType, modelInfo *
 		}
 
 		// Send response
-		json.NewEncoder(w).Encode(result)
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
 	}
 }
 
@@ -520,11 +688,13 @@ func (ur *UnifiedRegistry) createDynamicHandler(modelType ModelType, modelInfo *
 func (ur *UnifiedRegistry) sendJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"error":     message,
 		"status":    statusCode,
 		"timestamp": time.Now().Format(time.RFC3339),
-	})
+	}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
 }
 
 // GetModelStats returns registry statistics
@@ -540,7 +710,7 @@ func (ur *UnifiedRegistry) GetModelStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_models": len(ur.models),
 		"model_types":  modelTypes,
-		"monitoring":   ur.isMonitoring,
+		"monitoring":   false,
 	}
 }
 
@@ -575,173 +745,37 @@ var globalUnifiedRegistry *UnifiedRegistry
 // GetGlobalRegistry returns the global unified registry
 func GetGlobalRegistry() *UnifiedRegistry {
 	if globalUnifiedRegistry == nil {
-		globalUnifiedRegistry = NewUnifiedRegistry("models", "validations")
+		globalUnifiedRegistry = NewUnifiedRegistry("src/models", "src/validations")
 	}
 	return globalUnifiedRegistry
 }
 
-// Start begins monitoring the file system for the FileSystemWatcher
-func (fsw *FileSystemWatcher) Start(ctx context.Context) error {
-	log.Printf("👁️ Starting file system watcher (polling every %v)", fsw.pollInterval)
-
-	// Initial scan to establish baseline
-	if err := fsw.scanDirectories(); err != nil {
-		log.Printf("⚠️ Initial directory scan failed: %v", err)
+// toTitleCase converts a string to title case (replacement for deprecated strings.Title)
+func toTitleCase(s string) string {
+	if s == "" {
+		return ""
 	}
 
-	ticker := time.NewTicker(fsw.pollInterval)
-	defer ticker.Stop()
+	runes := []rune(s)
+	result := make([]rune, len(runes))
 
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("🛑 File system watcher stopping...")
-			return ctx.Err()
-		case <-ticker.C:
-			if err := fsw.scanDirectories(); err != nil {
-				log.Printf("⚠️ Directory scan error: %v", err)
-			}
+	makeUpper := true
+	for i, r := range runes {
+		if unicode.IsSpace(r) || r == '_' || r == '-' {
+			result[i] = r
+			makeUpper = true
+		} else if makeUpper {
+			result[i] = unicode.ToUpper(r)
+			makeUpper = false
+		} else {
+			result[i] = unicode.ToLower(r)
 		}
 	}
+
+	return string(result)
 }
 
-// scanDirectories scans both directories for changes
-func (fsw *FileSystemWatcher) scanDirectories() error {
-	fsw.mutex.Lock()
-	defer fsw.mutex.Unlock()
-
-	// Get current files
-	currentFiles := make(map[string]time.Time)
-
-	// Scan models directory
-	modelFiles, err := filepath.Glob(filepath.Join(fsw.modelsPath, "*.go"))
-	if err != nil {
-		return fmt.Errorf("scanning models directory: %w", err)
-	}
-
-	for _, file := range modelFiles {
-		info, err := os.Stat(file)
-		if err != nil {
-			continue
-		}
-		currentFiles[file] = info.ModTime()
-	}
-
-	// Scan validations directory
-	validationFiles, err := filepath.Glob(filepath.Join(fsw.validationsPath, "*.go"))
-	if err != nil {
-		return fmt.Errorf("scanning validations directory: %w", err)
-	}
-
-	for _, file := range validationFiles {
-		info, err := os.Stat(file)
-		if err != nil {
-			continue
-		}
-		currentFiles[file] = info.ModTime()
-	}
-
-	// Detect changes
-	fsw.detectChanges(currentFiles)
-
-	// Update last scan
-	fsw.lastScan = currentFiles
-
-	return nil
-}
-
-// detectChanges compares current files with last scan and triggers appropriate actions
-func (fsw *FileSystemWatcher) detectChanges(currentFiles map[string]time.Time) {
-	// Detect new/modified files
-	for filePath, modTime := range currentFiles {
-		if lastModTime, exists := fsw.lastScan[filePath]; !exists || modTime.After(lastModTime) {
-			fsw.handleFileChange(filePath, "created_or_modified")
-		}
-	}
-
-	// Detect deleted files
-	for filePath := range fsw.lastScan {
-		if _, exists := currentFiles[filePath]; !exists {
-			fsw.handleFileChange(filePath, "deleted")
-		}
-	}
-}
-
-// handleFileChange processes file system changes
-func (fsw *FileSystemWatcher) handleFileChange(filePath, action string) {
-	baseName := strings.TrimSuffix(filepath.Base(filePath), ".go")
-
-	// Skip test files
-	if strings.HasSuffix(baseName, "_test") {
-		return
-	}
-
-	// Determine if this is a model or validation file
-	isModelFile := strings.Contains(filePath, fsw.modelsPath)
-	isValidationFile := strings.Contains(filePath, fsw.validationsPath)
-
-	if !isModelFile && !isValidationFile {
-		return
-	}
-
-	switch action {
-	case "created_or_modified":
-		fsw.handleFileAddedOrModified(baseName, isModelFile, isValidationFile)
-	case "deleted":
-		fsw.handleFileDeleted(baseName, isModelFile, isValidationFile)
-	}
-}
-
-// handleFileAddedOrModified processes file additions or modifications
-func (fsw *FileSystemWatcher) handleFileAddedOrModified(baseName string, isModelFile, isValidationFile bool) {
-	log.Printf("📁 Detected file change: %s (model: %v, validation: %v)", baseName, isModelFile, isValidationFile)
-
-	// Check if both model and validation files exist
-	modelExists := fsw.fileExists(filepath.Join(fsw.modelsPath, baseName+".go"))
-	validationExists := fsw.fileExists(filepath.Join(fsw.validationsPath, baseName+".go"))
-
-	if modelExists && validationExists {
-		// Both files exist, register or re-register the model
-		if fsw.registry.IsRegistered(ModelType(baseName)) {
-			log.Printf("🔄 Re-registering modified model: %s", baseName)
-			// Unregister and re-register to pick up changes
-			fsw.registry.UnregisterModel(ModelType(baseName))
-		}
-
-		if err := fsw.registry.registerModelAutomatically(baseName); err != nil {
-			log.Printf("❌ Failed to register model %s: %v", baseName, err)
-		}
-	} else {
-		log.Printf("⚠️ Model %s incomplete (model: %v, validation: %v)", baseName, modelExists, validationExists)
-	}
-}
-
-// handleFileDeleted processes file deletions
-func (fsw *FileSystemWatcher) handleFileDeleted(baseName string, isModelFile, isValidationFile bool) {
-	log.Printf("🗑️ Detected file deletion: %s (model: %v, validation: %v)", baseName, isModelFile, isValidationFile)
-
-	// Check if both files still exist
-	modelExists := fsw.fileExists(filepath.Join(fsw.modelsPath, baseName+".go"))
-	validationExists := fsw.fileExists(filepath.Join(fsw.validationsPath, baseName+".go"))
-
-	// If either file is missing, unregister the model
-	if !modelExists || !validationExists {
-		if fsw.registry.IsRegistered(ModelType(baseName)) {
-			log.Printf("🔥 Model %s is incomplete (model: %v, validation: %v) - unregistering", baseName, modelExists, validationExists)
-			if err := fsw.registry.UnregisterModel(ModelType(baseName)); err != nil {
-				log.Printf("❌ Failed to unregister model %s: %v", baseName, err)
-			} else {
-				log.Printf("✅ Successfully retired model: %s", baseName)
-			}
-		}
-	}
-}
-
-// fileExists checks if a file exists
-func (fsw *FileSystemWatcher) fileExists(filePath string) bool {
-	_, err := os.Stat(filePath)
-	return !os.IsNotExist(err)
-}
+// FileSystemWatcher methods removed - using simple startup-only registration
 
 // StartRegistration starts the unified registration system
 func StartRegistration(ctx context.Context, mux *http.ServeMux) error {

@@ -1,0 +1,16 @@
+[
+  {
+    "endpoint": "/api/v1/users",
+    "method": "GET",
+    "status_code": 200,
+    "response_time_ms": 45,
+    "timestamp": "2025-01-04T10:00:00Z"
+  },
+  {
+    "endpoint": "/api/v1/products",
+    "method": "POST",
+    "status_code": 201,
+    "response_time_ms": 120,
+    "timestamp": "2025-01-04T10:01:00Z"
+  }
+]

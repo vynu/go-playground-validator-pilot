@@ -1,0 +1,7 @@
+{
+  "action": "opened",
+  "repository": "example/repo",
+  "sender": "testuser",
+  "number": 123,
+  "timestamp": "2025-01-04T10:00:00Z"
+}

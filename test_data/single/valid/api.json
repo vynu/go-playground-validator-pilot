@@ -1,0 +1,8 @@
+{
+  "endpoint": "/api/v1/users",
+  "method": "GET",
+  "status_code": 200,
+  "response_time_ms": 45,
+  "timestamp": "2025-01-04T10:00:00Z",
+  "request_id": "req-12345"
+}

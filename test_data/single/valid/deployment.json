@@ -1,0 +1,8 @@
+{
+  "application": "web-app",
+  "version": "v1.2.3",
+  "environment": "production",
+  "status": "success",
+  "deployed_by": "ci-cd",
+  "deployed_at": "2025-01-04T10:00:00Z"
+}

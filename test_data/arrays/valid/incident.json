@@ -1,0 +1,38 @@
+[
+  {
+    "id": "INC-001",
+    "title": "Critical Bug in Payment Processing System Needs Immediate Fix",
+    "description": "Payment processing system is failing for all credit card transactions in the production environment",
+    "severity": "critical",
+    "status": "open",
+    "priority": 5,
+    "category": "bug",
+    "environment": "production",
+    "reported_by": "support@example.com",
+    "reported_at": "2025-01-04T10:00:00Z"
+  },
+  {
+    "id": "INC-002",
+    "title": "Performance Degradation in Search Feature Requires Optimization",
+    "description": "Search functionality is experiencing severe performance degradation affecting user experience across platform",
+    "severity": "high",
+    "status": "in_progress",
+    "priority": 4,
+    "category": "performance",
+    "environment": "production",
+    "reported_by": "qa@example.com",
+    "reported_at": "2025-01-04T10:01:00Z"
+  },
+  {
+    "id": "INC-003",
+    "title": "New Feature Request for Advanced Analytics Dashboard Implementation",
+    "description": "Business team requesting new advanced analytics dashboard with real-time data visualization capabilities",
+    "severity": "low",
+    "status": "open",
+    "priority": 2,
+    "category": "feature",
+    "environment": "development",
+    "reported_by": "product@example.com",
+    "reported_at": "2025-01-04T10:02:00Z"
+  }
+]

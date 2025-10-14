@@ -1,0 +1,7 @@
+{
+  "query": "SELECT * FROM users",
+  "database": "production_db",
+  "execution_time_ms": 25,
+  "rows_affected": 100,
+  "timestamp": "2025-01-04T10:00:00Z"
+}

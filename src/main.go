@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	httpswagger "github.com/swaggo/http-swagger"
+	"goplayground-data-validator/models"
 	"goplayground-data-validator/registry"
 )
 
@@ -49,6 +51,11 @@ func startModularServer() {
 	mux.HandleFunc("POST /validate", handleGenericValidation) // Generic validation with model type
 	mux.HandleFunc("GET /models", handleListModels)           // List available models
 
+	// Register batch management endpoints (Phase 2)
+	mux.HandleFunc("POST /validate/batch/start", handleBatchStart)            // Start new batch session
+	mux.HandleFunc("GET /validate/batch/{id}", handleBatchStatus)             // Get batch status
+	mux.HandleFunc("POST /validate/batch/{id}/complete", handleBatchComplete) // Complete batch validation
+
 	// Register Swagger documentation endpoints
 	mux.Handle("/swagger/", httpswagger.WrapHandler)           // Swagger UI
 	mux.HandleFunc("GET /swagger/doc.json", handleSwaggerJSON) // Swagger JSON spec
@@ -67,6 +74,11 @@ func startModularServer() {
 
 	// Allow some time for initial model scanning
 	time.Sleep(1 * time.Second)
+
+	// Start batch session cleanup routine (Phase 2)
+	batchManager := models.GetBatchSessionManager()
+	batchManager.StartCleanupRoutine()
+	log.Println("🧹 Batch session cleanup routine started (30min expiration)")
 
 	// Create optimized HTTP server
 	server := &http.Server{
@@ -117,10 +129,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 // All platform-specific validation is now handled dynamically via registry.RegisterHTTPEndpoints()
 
 // handleGenericValidation handles validation with explicit model type using automatic discovery
+// Supports both single object validation (payload) and array validation (data)
 func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
+	// Ensure request body is closed and cleaned up
+	defer r.Body.Close()
+
 	var request struct {
-		ModelType string                 `json:"model_type"`
-		Payload   map[string]interface{} `json:"payload"`
+		ModelType string                   `json:"model_type"`
+		Payload   map[string]interface{}   `json:"payload"`             // Single object validation
+		Data      []map[string]interface{} `json:"data,omitempty"`      // Array validation
+		Threshold *float64                 `json:"threshold,omitempty"` // Optional threshold percentage for batch validation
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -137,6 +155,109 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Phase 2: Check for batch headers
+	batchID := r.Header.Get("X-Batch-ID")
+	batchComplete := r.Header.Get("X-Batch-Complete")
+
+	// Handle X-Batch-Complete header (finalize and return results)
+	if batchComplete != "" {
+		batchManager := models.GetBatchSessionManager()
+
+		// Check if batch session exists
+		session, exists := batchManager.GetBatchSession(batchComplete)
+		if !exists {
+			sendJSONError(w, fmt.Sprintf("Batch session '%s' not found", batchComplete), http.StatusNotFound)
+			return
+		}
+
+		status, err := batchManager.FinalizeBatchSession(batchComplete)
+		if err != nil {
+			sendJSONError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if status == "failed" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"batch_id":        session.BatchID,
+			"status":          status,
+			"total_records":   session.TotalRecords,
+			"valid_records":   session.ValidRecords,
+			"invalid_records": session.InvalidRecords,
+			"warning_records": session.WarningRecords,
+			"threshold":       session.Threshold,
+			"started_at":      session.StartedAt,
+			"completed_at":    session.LastUpdated,
+		})
+
+		// Clean up after returning response
+		go func() {
+			time.Sleep(1 * time.Second)
+			batchManager.DeleteBatchSession(batchComplete)
+		}()
+		return
+	}
+
+	// NEW: Detect array vs single object validation
+	if len(request.Data) > 0 {
+		// Check if this is batch accumulation mode
+		if batchID != "" {
+			// Batch accumulation: validate and update batch session
+			batchManager := models.GetBatchSessionManager()
+			_, exists := batchManager.GetBatchSession(batchID)
+			if !exists {
+				sendJSONError(w, fmt.Sprintf("Batch session '%s' not found", batchID), http.StatusNotFound)
+				return
+			}
+
+			// Validate the array
+			result, err := globalRegistry.ValidateArray(modelType, request.Data, request.Threshold)
+			if err != nil {
+				sendJSONError(w, "Array validation failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Update batch session with validation counts
+			batchManager.UpdateBatchSession(batchID, result.ValidRecords, result.InvalidRecords, result.WarningRecords)
+
+			// Get updated session
+			updatedSession, _ := batchManager.GetBatchSession(batchID)
+
+			// Return accumulation status
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"batch_id":      batchID,
+				"status":        "accumulating",
+				"records_count": updatedSession.TotalRecords,
+				"message":       fmt.Sprintf("Added %d records to batch. Use X-Batch-Complete header to finalize.", result.TotalRecords),
+			})
+			return
+		}
+
+		// Normal array validation path (no batch)
+		result, err := globalRegistry.ValidateArray(modelType, request.Data, request.Threshold)
+		if err != nil {
+			sendJSONError(w, "Array validation failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Set appropriate status code based on validation status
+		// "success" = all validation passed threshold, "failed" = below threshold
+		if result.Status == "failed" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+		}
+
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	// Existing single object validation
 	// Create an instance of the model struct
 	modelInstance, err := globalRegistry.CreateModelInstance(modelType)
 	if err != nil {
@@ -144,14 +265,8 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert map to struct using JSON marshaling/unmarshaling
-	jsonBytes, err := json.Marshal(request.Payload)
-	if err != nil {
-		sendJSONError(w, "Failed to serialize payload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if err := json.Unmarshal(jsonBytes, modelInstance); err != nil {
+	// Convert map to struct using optimized direct conversion
+	if err := convertMapToStruct(request.Payload, modelInstance); err != nil {
 		sendJSONError(w, "Failed to parse payload into model struct: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -184,28 +299,8 @@ func handleGenericValidation(w http.ResponseWriter, r *http.Request) {
 func handleListModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Try dynamic registry first
-	dynamicRegistry := registry.GetGlobalDynamicRegistry()
-	if dynamicRegistry != nil {
-		modelsWithDetails := dynamicRegistry.GetRegisteredModelsWithDetails()
-		json.NewEncoder(w).Encode(modelsWithDetails)
-		return
-	}
-
-	// Fallback to standard registry
-	standardRegistry := registry.GetGlobalRegistry()
-	allModels := standardRegistry.GetAllModels()
-
-	modelList := make([]string, 0, len(allModels))
-	for modelType := range allModels {
-		modelList = append(modelList, string(modelType))
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"models": modelList,
-		"count":  len(modelList),
-		"source": "standard_registry",
-	})
+	modelsWithDetails := registry.GetGlobalRegistry().GetRegisteredModelsWithDetails()
+	json.NewEncoder(w).Encode(modelsWithDetails)
 }
 
 // sendJSONError sends a standardized JSON error response
@@ -218,9 +313,244 @@ func sendJSONError(w http.ResponseWriter, message string, status int) {
 	})
 }
 
-// NOTE: The old hardcoded convert functions have been removed.
-// All model type conversion is now handled automatically by the registry system
-// using reflection and the universal converter in handleGenericValidation.
+// convertMapToStruct efficiently converts a map to a struct using reflection
+// This replaces the inefficient JSON marshal/unmarshal pattern
+func convertMapToStruct(src map[string]interface{}, dest interface{}) error {
+	destValue := reflect.ValueOf(dest)
+	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("destination must be a pointer to a struct")
+	}
+
+	destValue = destValue.Elem()
+	destType := destValue.Type()
+
+	for i := 0; i < destValue.NumField(); i++ {
+		field := destValue.Field(i)
+		fieldType := destType.Field(i)
+
+		// Skip unexported fields
+		if !field.CanSet() {
+			continue
+		}
+
+		// Get the JSON tag name, fall back to field name
+		jsonTag := fieldType.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+
+		// Handle json tag with options like "field_name,omitempty"
+		fieldName := strings.Split(jsonTag, ",")[0]
+		if fieldName == "" {
+			fieldName = fieldType.Name
+		}
+
+		// Get value from source map
+		srcValue, exists := src[fieldName]
+		if !exists {
+			continue
+		}
+
+		// Convert and set the value
+		if err := setFieldValue(field, srcValue); err != nil {
+			return fmt.Errorf("failed to set field %s: %v", fieldName, err)
+		}
+	}
+
+	return nil
+}
+
+// setFieldValue sets a reflect.Value with type conversion
+func setFieldValue(field reflect.Value, value interface{}) error {
+	if value == nil {
+		return nil
+	}
+
+	srcValue := reflect.ValueOf(value)
+	fieldType := field.Type()
+
+	// Direct assignment if types match
+	if srcValue.Type().AssignableTo(fieldType) {
+		field.Set(srcValue)
+		return nil
+	}
+
+	// Handle type conversions
+	switch fieldType.Kind() {
+	case reflect.String:
+		if str, ok := value.(string); ok {
+			field.SetString(str)
+		} else {
+			field.SetString(fmt.Sprintf("%v", value))
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if num, ok := convertToInt64(value); ok {
+			if field.OverflowInt(num) {
+				return fmt.Errorf("integer overflow for value %v", value)
+			}
+			field.SetInt(num)
+		} else {
+			return fmt.Errorf("cannot convert %v to integer", value)
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if num, ok := convertToUint64(value); ok {
+			if field.OverflowUint(num) {
+				return fmt.Errorf("unsigned integer overflow for value %v", value)
+			}
+			field.SetUint(num)
+		} else {
+			return fmt.Errorf("cannot convert %v to unsigned integer", value)
+		}
+	case reflect.Float32, reflect.Float64:
+		if num, ok := convertToFloat64(value); ok {
+			if field.OverflowFloat(num) {
+				return fmt.Errorf("float overflow for value %v", value)
+			}
+			field.SetFloat(num)
+		} else {
+			return fmt.Errorf("cannot convert %v to float", value)
+		}
+	case reflect.Bool:
+		if b, ok := value.(bool); ok {
+			field.SetBool(b)
+		} else {
+			return fmt.Errorf("cannot convert %v to bool", value)
+		}
+	case reflect.Slice:
+		return setSliceValue(field, value)
+	case reflect.Map:
+		return setMapValue(field, value)
+	default:
+		// Fall back to JSON conversion for complex types
+		jsonBytes, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(jsonBytes, field.Addr().Interface())
+	}
+
+	return nil
+}
+
+// Helper functions for type conversion
+func convertToInt64(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int8:
+		return int64(v), true
+	case int16:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		if i, err := fmt.Sscanf(v, "%d", new(int64)); err == nil && i == 1 {
+			var result int64
+			fmt.Sscanf(v, "%d", &result)
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func convertToUint64(value interface{}) (uint64, bool) {
+	switch v := value.(type) {
+	case uint:
+		return uint64(v), true
+	case uint8:
+		return uint64(v), true
+	case uint16:
+		return uint64(v), true
+	case uint32:
+		return uint64(v), true
+	case uint64:
+		return v, true
+	case int:
+		if v >= 0 {
+			return uint64(v), true
+		}
+	case int64:
+		if v >= 0 {
+			return uint64(v), true
+		}
+	case float64:
+		if v >= 0 {
+			return uint64(v), true
+		}
+	}
+	return 0, false
+}
+
+func convertToFloat64(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case string:
+		if f, err := fmt.Sscanf(v, "%f", new(float64)); err == nil && f == 1 {
+			var result float64
+			fmt.Sscanf(v, "%f", &result)
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func setSliceValue(field reflect.Value, value interface{}) error {
+	srcSlice := reflect.ValueOf(value)
+	if srcSlice.Kind() != reflect.Slice {
+		return fmt.Errorf("source is not a slice")
+	}
+
+	sliceType := field.Type()
+	newSlice := reflect.MakeSlice(sliceType, srcSlice.Len(), srcSlice.Len())
+
+	for i := 0; i < srcSlice.Len(); i++ {
+		if err := setFieldValue(newSlice.Index(i), srcSlice.Index(i).Interface()); err != nil {
+			return err
+		}
+	}
+
+	field.Set(newSlice)
+	return nil
+}
+
+func setMapValue(field reflect.Value, value interface{}) error {
+	srcMap := reflect.ValueOf(value)
+	if srcMap.Kind() != reflect.Map {
+		return fmt.Errorf("source is not a map")
+	}
+
+	mapType := field.Type()
+	newMap := reflect.MakeMap(mapType)
+
+	for _, key := range srcMap.MapKeys() {
+		mapValue := srcMap.MapIndex(key)
+		newValue := reflect.New(mapType.Elem()).Elem()
+
+		if err := setFieldValue(newValue, mapValue.Interface()); err != nil {
+			return err
+		}
+
+		newMap.SetMapIndex(key, newValue)
+	}
+
+	field.Set(newMap)
+	return nil
+}
 
 // handleSwaggerJSON serves the Swagger JSON specification
 func handleSwaggerJSON(w http.ResponseWriter, r *http.Request) {
@@ -235,65 +565,20 @@ func handleSwaggerJSON(w http.ResponseWriter, r *http.Request) {
 func handleSwaggerModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Try dynamic registry first
-	dynamicRegistry := registry.GetGlobalDynamicRegistry()
-	if dynamicRegistry != nil {
-		modelsWithDetails := dynamicRegistry.GetRegisteredModelsWithDetails()
-		json.NewEncoder(w).Encode(modelsWithDetails)
-		return
-	}
-
-	// Fallback to standard registry
-	models := registry.GetGlobalRegistry().GetAllModels()
-
-	// Create dynamic schemas for each model
-	dynamicSchemas := make(map[string]interface{})
-	for modelType, modelInfo := range models {
-		dynamicSchemas[string(modelType)] = map[string]interface{}{
-			"type":        "object",
-			"description": modelInfo.Description,
-			"version":     modelInfo.Version,
-			"author":      modelInfo.Author,
-			"tags":        modelInfo.Tags,
-			"examples":    modelInfo.Examples,
-			"created_at":  modelInfo.CreatedAt,
-			"endpoint":    "/validate/" + string(modelType),
-		}
-	}
-
-	response := map[string]interface{}{
-		"models":      dynamicSchemas,
-		"count":       len(dynamicSchemas),
-		"last_update": time.Now().Format(time.RFC3339),
-		"source":      "standard_registry",
-	}
-
-	json.NewEncoder(w).Encode(response)
+	modelsWithDetails := registry.GetGlobalRegistry().GetRegisteredModelsWithDetails()
+	json.NewEncoder(w).Encode(modelsWithDetails)
 }
 
 // getSwaggerSpec returns the Swagger specification as a Go map
 func getSwaggerSpec() map[string]interface{} {
-	// Get dynamic model list
-	var modelList []string
-
-	// Try dynamic registry first
-	dynamicRegistry := registry.GetGlobalDynamicRegistry()
-	if dynamicRegistry != nil {
-		allModels := dynamicRegistry.GetAllModels()
-		modelList = make([]string, 0, len(allModels))
-		for modelType := range allModels {
-			modelList = append(modelList, string(modelType))
-		}
-	} else {
-		// Fallback to standard registry
-		models := registry.GetGlobalRegistry().ListModels()
-		modelList = make([]string, len(models))
-		for i, model := range models {
-			modelList[i] = string(model)
-		}
+	// Get model list from registry
+	models := registry.GetGlobalRegistry().ListModels()
+	modelList := make([]string, len(models))
+	for i, model := range models {
+		modelList[i] = string(model)
 	}
 
-	// Basic Swagger spec structure that will be populated from swagger.yaml
+	// Basic Swagger spec structure
 	return map[string]interface{}{
 		"openapi": "3.0.3",
 		"info": map[string]interface{}{
@@ -313,6 +598,13 @@ func getSwaggerSpec() map[string]interface{} {
 					"responses": map[string]interface{}{
 						"200": map[string]interface{}{
 							"description": "Server is healthy",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/HealthResponse",
+									},
+								},
+							},
 						},
 					},
 				},
@@ -325,6 +617,120 @@ func getSwaggerSpec() map[string]interface{} {
 					"responses": map[string]interface{}{
 						"200": map[string]interface{}{
 							"description": "Available model types",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/ModelsResponse",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			"/validate": map[string]interface{}{
+				"post": map[string]interface{}{
+					"summary":     "Validate single object or array of objects",
+					"description": "Validates a single object or an array of objects with optional threshold-based validation. Supports both single object validation (payload field) and batch validation (data field). For batch validation, you can optionally specify a threshold percentage for success criteria.",
+					"tags":        []string{"Generic Validation"},
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"oneOf": []map[string]interface{}{
+										{"$ref": "#/components/schemas/SingleValidationRequest"},
+										{"$ref": "#/components/schemas/ArrayValidationRequest"},
+									},
+								},
+								"examples": map[string]interface{}{
+									"single_object": map[string]interface{}{
+										"summary": "Single object validation",
+										"value": map[string]interface{}{
+											"model_type": "incident",
+											"payload": map[string]interface{}{
+												"id":          "INC-20240115-0001",
+												"title":       "Test Incident",
+												"description": "Testing single object validation",
+												"priority":    5,
+												"severity":    "critical",
+												"status":      "open",
+											},
+										},
+									},
+									"array_validation": map[string]interface{}{
+										"summary": "Array validation without threshold",
+										"value": map[string]interface{}{
+											"model_type": "incident",
+											"data": []map[string]interface{}{
+												{
+													"id":       "INC-20240115-0001",
+													"title":    "Incident 1",
+													"priority": 5,
+													"severity": "critical",
+													"status":   "open",
+												},
+												{
+													"id":       "INC-20240115-0002",
+													"title":    "Incident 2",
+													"priority": 3,
+													"severity": "high",
+													"status":   "open",
+												},
+											},
+										},
+									},
+									"threshold_validation": map[string]interface{}{
+										"summary": "Array validation with 20% threshold",
+										"value": map[string]interface{}{
+											"model_type": "incident",
+											"threshold":  20.0,
+											"data": []map[string]interface{}{
+												{
+													"id":       "INC-20240115-0001",
+													"title":    "Valid Incident",
+													"priority": 5,
+													"severity": "critical",
+													"status":   "open",
+												},
+												{
+													"id":       "INVALID",
+													"title":    "",
+													"priority": 999,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "Single object validation result",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/ValidationResult",
+									},
+								},
+							},
+						},
+						"422": map[string]interface{}{
+							"description": "Array validation result (status: failed when threshold not met)",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/ArrayValidationResult",
+									},
+								},
+							},
+						},
+						"400": map[string]interface{}{
+							"description": "Bad request - invalid model type or malformed payload",
+						},
+						"500": map[string]interface{}{
+							"description": "Internal server error",
 						},
 					},
 				},
@@ -332,13 +738,414 @@ func getSwaggerSpec() map[string]interface{} {
 		},
 		"tags": []map[string]interface{}{
 			{"name": "System", "description": "System health, status and model discovery"},
-			{"name": "Platform Validation", "description": "Platform-specific validation endpoints"},
-			{"name": "Generic Validation", "description": "Generic validation with automatic type conversion"},
+			{"name": "Generic Validation", "description": "Generic validation endpoint supporting all model types with single object and array/batch validation"},
 		},
 		"components": map[string]interface{}{
 			"schemas": map[string]interface{}{
-				"available_models": modelList,
+				"AvailableModels": map[string]interface{}{
+					"type":        "array",
+					"description": "List of available model types that can be validated",
+					"items": map[string]interface{}{
+						"type": "string",
+						"enum": modelList,
+					},
+					"example": modelList,
+				},
+				"HealthResponse": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"status":  map[string]interface{}{"type": "string", "example": "healthy"},
+						"version": map[string]interface{}{"type": "string", "example": "2.0.0-modular"},
+						"uptime":  map[string]interface{}{"type": "string", "example": "1h30m45s"},
+						"server":  map[string]interface{}{"type": "string", "example": "modular-validation-server"},
+					},
+				},
+				"ModelsResponse": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"count":  map[string]interface{}{"type": "integer", "example": 6},
+						"source": map[string]interface{}{"type": "string", "example": "unified-registry"},
+						"models": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": map[string]interface{}{"$ref": "#/components/schemas/ModelInfo"},
+						},
+					},
+				},
+				"ModelInfo": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"name":        map[string]interface{}{"type": "string", "example": "Incident Report"},
+						"description": map[string]interface{}{"type": "string", "example": "Incident report validation with operational context"},
+						"version":     map[string]interface{}{"type": "string", "example": "1.0.0"},
+						"author":      map[string]interface{}{"type": "string", "example": "Unified Auto-Registry"},
+						"endpoint":    map[string]interface{}{"type": "string", "example": "/validate/incident"},
+						"tags":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+						"created_at":  map[string]interface{}{"type": "string", "format": "date-time"},
+					},
+				},
+				"SingleValidationRequest": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"model_type", "payload"},
+					"properties": map[string]interface{}{
+						"model_type": map[string]interface{}{
+							"type":        "string",
+							"description": "The type of model to validate",
+							"enum":        modelList,
+							"example":     "incident",
+						},
+						"payload": map[string]interface{}{
+							"type":        "object",
+							"description": "The object to validate",
+							"example": map[string]interface{}{
+								"id":          "INC-20240115-0001",
+								"title":       "Test Incident",
+								"description": "Testing validation",
+								"priority":    5,
+								"severity":    "critical",
+								"status":      "open",
+							},
+						},
+					},
+				},
+				"ArrayValidationRequest": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"model_type", "data"},
+					"properties": map[string]interface{}{
+						"model_type": map[string]interface{}{
+							"type":        "string",
+							"description": "The type of model to validate",
+							"enum":        modelList,
+							"example":     "incident",
+						},
+						"data": map[string]interface{}{
+							"type":        "array",
+							"description": "Array of objects to validate",
+							"items":       map[string]interface{}{"type": "object"},
+							"example": []map[string]interface{}{
+								{
+									"id":       "INC-20240115-0001",
+									"title":    "Incident 1",
+									"priority": 5,
+								},
+								{
+									"id":       "INC-20240115-0002",
+									"title":    "Incident 2",
+									"priority": 3,
+								},
+							},
+						},
+						"threshold": map[string]interface{}{
+							"type":        "number",
+							"format":      "float",
+							"description": "Optional threshold percentage (0-100) for success criteria. Success rate must be >= threshold for status 'success'. For example, threshold of 20.0 means at least 20% of records must be valid.",
+							"minimum":     0,
+							"maximum":     100,
+							"example":     20.0,
+						},
+					},
+				},
+				"ValidationResult": map[string]interface{}{
+					"type":        "object",
+					"description": "Single object validation result",
+					"properties": map[string]interface{}{
+						"is_valid": map[string]interface{}{
+							"type":        "boolean",
+							"description": "Whether the payload is valid",
+							"example":     true,
+						},
+						"model_type": map[string]interface{}{
+							"type":        "string",
+							"description": "The model type that was validated",
+							"example":     "incident",
+						},
+						"provider": map[string]interface{}{
+							"type":        "string",
+							"description": "The validation provider used",
+							"example":     "go-playground",
+						},
+						"errors": map[string]interface{}{
+							"type":        "array",
+							"description": "List of validation errors (empty if valid)",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationError"},
+						},
+						"warnings": map[string]interface{}{
+							"type":        "array",
+							"description": "List of validation warnings (business logic warnings)",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationWarning"},
+						},
+					},
+				},
+				"ArrayValidationResult": map[string]interface{}{
+					"type":        "object",
+					"description": "Array/batch validation result with optional threshold-based status",
+					"properties": map[string]interface{}{
+						"batch_id": map[string]interface{}{
+							"type":        "string",
+							"description": "Auto-generated batch identifier",
+							"example":     "auto_abc123xyz",
+						},
+						"status": map[string]interface{}{
+							"type":        "string",
+							"description": "Overall batch status: 'success' if threshold met or no threshold, 'failed' if below threshold",
+							"enum":        []string{"success", "failed"},
+							"example":     "success",
+						},
+						"total_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total number of records validated",
+							"example":     10,
+						},
+						"valid_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Number of valid records",
+							"example":     8,
+						},
+						"invalid_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Number of invalid records",
+							"example":     2,
+						},
+						"warning_records": map[string]interface{}{
+							"type":        "integer",
+							"description": "Number of records with warnings only",
+							"example":     1,
+						},
+						"threshold": map[string]interface{}{
+							"type":        "number",
+							"format":      "float",
+							"description": "The threshold percentage that was applied (if any)",
+							"example":     20.0,
+						},
+						"processing_time_ms": map[string]interface{}{
+							"type":        "integer",
+							"description": "Processing time in milliseconds",
+							"example":     125,
+						},
+						"completed_at": map[string]interface{}{
+							"type":        "string",
+							"format":      "date-time",
+							"description": "Timestamp when validation completed",
+						},
+						"summary": map[string]interface{}{
+							"type":        "object",
+							"description": "Summary statistics",
+							"$ref":        "#/components/schemas/ValidationSummary",
+						},
+						"results": map[string]interface{}{
+							"type":        "array",
+							"description": "Individual row results (only invalid rows and rows with warnings - valid rows without warnings are excluded)",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/RowValidationResult"},
+						},
+					},
+				},
+				"ValidationSummary": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"success_rate": map[string]interface{}{
+							"type":        "number",
+							"format":      "float",
+							"description": "Success rate percentage (valid_records / total_records * 100)",
+							"example":     80.0,
+						},
+						"validation_errors": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total number of validation errors across all records",
+							"example":     5,
+						},
+						"validation_warnings": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total number of validation warnings across all records",
+							"example":     2,
+						},
+						"total_records_processed": map[string]interface{}{
+							"type":        "integer",
+							"description": "Total records processed",
+							"example":     10,
+						},
+					},
+				},
+				"RowValidationResult": map[string]interface{}{
+					"type":        "object",
+					"description": "Individual row validation result (only included if invalid or has warnings)",
+					"properties": map[string]interface{}{
+						"row_index": map[string]interface{}{
+							"type":        "integer",
+							"description": "Zero-based index of the row in the input array",
+							"example":     2,
+						},
+						"record_identifier": map[string]interface{}{
+							"type":        "string",
+							"description": "Identifier extracted from the record (e.g., ID field)",
+							"example":     "INC-20240115-0003",
+						},
+						"is_valid": map[string]interface{}{
+							"type":        "boolean",
+							"description": "Whether this row is valid",
+							"example":     false,
+						},
+						"validation_time_ms": map[string]interface{}{
+							"type":        "integer",
+							"description": "Time taken to validate this row in milliseconds",
+							"example":     5,
+						},
+						"errors": map[string]interface{}{
+							"type":        "array",
+							"description": "Validation errors for this row",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationError"},
+						},
+						"warnings": map[string]interface{}{
+							"type":        "array",
+							"description": "Validation warnings for this row",
+							"items":       map[string]interface{}{"$ref": "#/components/schemas/ValidationWarning"},
+						},
+					},
+				},
+				"ValidationError": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"field": map[string]interface{}{
+							"type":        "string",
+							"description": "The field that failed validation",
+							"example":     "priority",
+						},
+						"message": map[string]interface{}{
+							"type":        "string",
+							"description": "Human-readable error message",
+							"example":     "Priority must be between 1 and 5",
+						},
+						"code": map[string]interface{}{
+							"type":        "string",
+							"description": "Error code for programmatic handling",
+							"example":     "VALUE_OUT_OF_RANGE",
+						},
+					},
+				},
+				"ValidationWarning": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"field": map[string]interface{}{
+							"type":        "string",
+							"description": "The field that triggered the warning",
+							"example":     "status",
+						},
+						"message": map[string]interface{}{
+							"type":        "string",
+							"description": "Human-readable warning message",
+							"example":     "Incident is older than 90 days",
+						},
+						"code": map[string]interface{}{
+							"type":        "string",
+							"description": "Warning code for programmatic handling",
+							"example":     "STALE_INCIDENT",
+						},
+					},
+				},
 			},
 		},
 	}
+}
+
+// ============================================================================
+// PHASE 2: Batch Management Handlers
+// ============================================================================
+
+// handleBatchStart starts a new batch session
+func handleBatchStart(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var request struct {
+		ModelType string   `json:"model_type"`
+		JobID     string   `json:"job_id,omitempty"`
+		Threshold *float64 `json:"threshold,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		sendJSONError(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	if request.ModelType == "" {
+		sendJSONError(w, "model_type is required", http.StatusBadRequest)
+		return
+	}
+
+	// Generate batch ID
+	batchID := models.GenerateBatchID(request.JobID)
+
+	// Create batch session
+	batchManager := models.GetBatchSessionManager()
+	session := batchManager.CreateBatchSession(batchID, request.Threshold)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"batch_id":   session.BatchID,
+		"status":     "active",
+		"started_at": session.StartedAt,
+		"expires_at": session.StartedAt.Add(30 * time.Minute), // 30min expiration
+		"threshold":  session.Threshold,
+		"message":    "Batch session created. Use X-Batch-ID header to add data.",
+	})
+}
+
+// handleBatchStatus retrieves the current status of a batch session
+func handleBatchStatus(w http.ResponseWriter, r *http.Request) {
+	batchID := r.PathValue("id")
+	if batchID == "" {
+		sendJSONError(w, "batch ID is required", http.StatusBadRequest)
+		return
+	}
+
+	batchManager := models.GetBatchSessionManager()
+	session, exists := batchManager.GetBatchSession(batchID)
+	if !exists {
+		sendJSONError(w, fmt.Sprintf("Batch session '%s' not found", batchID), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(session.GetStatus())
+}
+
+// handleBatchComplete finalizes a batch session and returns validation results
+func handleBatchComplete(w http.ResponseWriter, r *http.Request) {
+	batchID := r.PathValue("id")
+	if batchID == "" {
+		sendJSONError(w, "batch ID is required", http.StatusBadRequest)
+		return
+	}
+
+	batchManager := models.GetBatchSessionManager()
+	status, err := batchManager.FinalizeBatchSession(batchID)
+	if err != nil {
+		sendJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	session, _ := batchManager.GetBatchSession(batchID)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// Set status code based on validation result
+	if status == "failed" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"batch_id":        session.BatchID,
+		"status":          status,
+		"total_records":   session.TotalRecords,
+		"valid_records":   session.ValidRecords,
+		"invalid_records": session.InvalidRecords,
+		"warning_records": session.WarningRecords,
+		"threshold":       session.Threshold,
+		"started_at":      session.StartedAt,
+		"completed_at":    session.LastUpdated,
+		"message":         fmt.Sprintf("Batch validation completed with status: %s", status),
+	})
+
+	// Clean up after returning response
+	go func() {
+		time.Sleep(1 * time.Second) // Small delay to ensure response is sent
+		batchManager.DeleteBatchSession(batchID)
+	}()
 }

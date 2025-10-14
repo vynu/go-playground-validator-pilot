@@ -1,0 +1,26 @@
+[
+  {
+    "type": "user.created",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:00:00Z",
+    "source": "https://api.example.com/users",
+    "data": {"user_id": "001"},
+    "status": "completed"
+  },
+  {
+    "type": "user.updated",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:01:00Z",
+    "source": "https://api.example.com/users",
+    "data": {"user_id": "002"},
+    "status": "completed"
+  },
+  {
+    "type": "user.deleted",
+    "version": "1.0.0",
+    "timestamp": "2025-01-04T10:02:00Z",
+    "source": "https://api.example.com/users",
+    "data": {"user_id": "003"},
+    "status": "completed"
+  }
+]
